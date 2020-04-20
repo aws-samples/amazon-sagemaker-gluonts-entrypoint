@@ -1,0 +1,65 @@
+In [2]: from gluonts.core import serde
+In [3]: from gluonts.model.deepar import DeepAREstimator
+In [4]: import gluonts.distribution as gluonts_distribution
+In [6]: freq = 'M'
+In [8]: fcast_length=9
+In [10]: context_length = 52
+In [12]: from gluonts.trainer import Trainer
+In [13]: estimator = DeepAREstimator(
+    ...:                     freq=freq,
+    ...:                     prediction_length=fcast_length,
+    ...:                     context_length=context_length,
+    ...:                     trainer=Trainer(epochs=500),
+    ...:                     #trainer=Trainer(epochs=10),  # Short epochs, just to quickly complete this example.
+    ...:                     cell_type='gru',
+    ...:                     use_feat_static_cat=True,
+    ...:                     cardinality=[len(deepar_cat_idx)],
+    ...:                     #num_layers=3,
+    ...:                     num_layers=2,
+    ...:                     #distr_output=gluonts_distribution.MixtureDistributionOutput([gluonts_distribution.GaussianOutput(), gluonts_distribution.GaussianOutput()])
+    ...:                     distr_output=gluonts_distribution.GaussianOutput()
+    ...:             )
+
+In [19]: serde.dump_json(estimator)
+Out[19]: '{"__kind__": "instance", "args": [], "class": "gluonts.model.deepar._estimator.DeepAREstimator", "kwargs": {"cardinality": [5], "cell_type": "gru", "context_length": 52, "distr_output": {"__kind__": "instance", "args": [], "class": "gluonts.distribution.gaussian.GaussianOutput", "kwargs": {}}, "dropout_rate": 0.1, "embedding_dimension": null, "freq": "M", "lags_seq": null, "num_cells": 40, "num_layers": 2, "num_parallel_samples": 100, "prediction_length": 9, "scaling": true, "time_features": null, "trainer": {"__kind__": "instance", "args": [], "class": "gluonts.trainer._base.Trainer", "kwargs": {"batch_size": 32, "clip_gradient": 10.0, "ctx": null, "epochs": 500, "hybridize": true, "init": "xavier", "learning_rate": 0.001, "learning_rate_decay_factor": 0.5, "minimum_learning_rate": 5e-05, "num_batches_per_epoch": 50, "patience": 10, "weight_decay": 1e-08}}, "use_feat_dynamic_real": false, "use_feat_static_cat": true, "use_feat_static_real": false}}'
+
+In [20]: serde.encode(estimator)
+Out[20]:
+{'__kind__': 'instance',
+ 'class': 'gluonts.model.deepar._estimator.DeepAREstimator',
+ 'args': [],
+ 'kwargs': {'cardinality': [5],
+  'cell_type': 'gru',
+  'context_length': 52,
+  'distr_output': {'__kind__': 'instance',
+   'class': 'gluonts.distribution.gaussian.GaussianOutput',
+   'args': [],
+   'kwargs': {}},
+  'dropout_rate': 0.1,
+  'embedding_dimension': None,
+  'freq': 'M',
+  'lags_seq': None,
+  'num_cells': 40,
+  'num_layers': 2,
+  'num_parallel_samples': 100,
+  'prediction_length': 9,
+  'scaling': True,
+  'time_features': None,
+  'trainer': {'__kind__': 'instance',
+   'class': 'gluonts.trainer._base.Trainer',
+   'args': [],
+   'kwargs': {'batch_size': 32,
+    'clip_gradient': 10.0,
+    'ctx': None,
+    'epochs': 500,
+    'hybridize': True,
+    'init': 'xavier',
+    'learning_rate': 0.001,
+    'learning_rate_decay_factor': 0.5,
+    'minimum_learning_rate': 5e-05,
+    'num_batches_per_epoch': 50,
+    'patience': 10,
+    'weight_decay': 1e-08}},
+  'use_feat_dynamic_real': False,
+  'use_feat_static_cat': True,
+  'use_feat_static_real': False}}
