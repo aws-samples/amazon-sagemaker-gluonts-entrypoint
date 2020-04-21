@@ -3,17 +3,14 @@ import argparse
 import json
 import logging
 import os
-import sys
 import warnings
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from gluonts.core import serde
-from gluonts.dataset.common import FileDataset, MetaData, TrainDatasets, load_datasets
+from gluonts.dataset.common import MetaData, load_datasets
 from gluonts.dataset.repository import datasets
 from gluonts.evaluation import Evaluator, backtest
-from gluonts.model.deepar import DeepAREstimator
-from gluonts.model.deepstate import DeepStateEstimator
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s %(message)s", datefmt="[%Y-%m-%d %H:%M:%S]",
@@ -45,6 +42,7 @@ def deser_algo_args(hp: Dict[str, Any], deser_list=[]):
     return kwargs
 
 
+# TODO: time feature: Optional[List[TimeFeature]]
 deser_args = {
     "gluonts.model.deepar.DeepAREstimator": ["trainer", "distr_output"],
     "gluonts.model.deepstate.DeepStateEstimator": [
@@ -123,6 +121,7 @@ def train(args, algo_args):
         logger.info("Early termination: before %s", args.stop_before)
         return
 
+    # Training
     logger.info("Starting model training.")
     predictor = estimator.train(dataset.train)
     forecast_it, ts_it = backtest.make_evaluation_predictions(
@@ -132,9 +131,9 @@ def train(args, algo_args):
         logger.info("Early termination: before %s", args.stop_before)
         return
 
+    # Backtesting
     logger.info("Starting model evaluation.")
-    evaluator = Evaluator(quantiles=eval(args.quantiles))
-
+    evaluator = Evaluator(quantiles=args.quantiles)
     agg_metrics, item_metrics = evaluator(ts_it, forecast_it, num_series=len(dataset.test))
 
     # required for metric tracking.
@@ -217,9 +216,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, default=os.environ.get("SM_HP_DATASET", ""))
     parser.add_argument("--num-samples", type=int, default=os.environ.get("SM_HP_NUM_SAMPLES", 100))
     parser.add_argument(
-        "--quantiles",
-        type=str,
-        default=os.environ.get("SM_HP_QUANTILES", [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+        "--quantiles", default=os.environ.get("SM_HP_QUANTILES", [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
     )
     parser.add_argument(
         "--algo", type=str, default=os.environ.get("SM_HP_ALGO", "gluonts.model.deepar.DeepAREstimator"),

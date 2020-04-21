@@ -1,4 +1,4 @@
-from gluonts.dataset.common import FileDataset, load_datasets
+from gluonts.dataset.common import load_datasets
 
 # Format of metadata: gluonts/dataset/common.py
 tds = load_datasets("metadata", "train", "test")
