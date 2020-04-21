@@ -1,19 +1,15 @@
-# python entrypoint.py --freq M --prediction_length 5 --distr_output gluonts.distribution.gaussian.GaussianOutput --use_feat_static_cat True --cardinality '[5]'
-# python entrypoint.py --algo gluonts.model.deepar.DeepAREstimator --freq M --prediction_length 5 --distr_output gluonts.distribution.gaussian.GaussianOutput --use_feat_static_cat True --cardinality '[5]'
-# python entrypoint.py --algo gluonts.model.deepstate.DeepStateEstimator --freq M --prediction_length 5 --use_feat_static_cat True --cardinality '[5]' --noise_std_bounds gluonts.distribution.lds.ParameterBounds --noise_std_bounds.lower 1e-5 --noise_std_bounds.upper 1e-1
-
 # Based on glounts/nursery/sagemaker_sdk/entrypoint_scripts/train_entry_point.py
-
-
 import argparse
 import json
 import logging
 import os
+import sys
+import warnings
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from gluonts.core import serde
-from gluonts.dataset import common
+from gluonts.dataset.common import FileDataset, MetaData, TrainDatasets, load_datasets
 from gluonts.dataset.repository import datasets
 from gluonts.evaluation import Evaluator, backtest
 from gluonts.model.deepar import DeepAREstimator
@@ -39,24 +35,6 @@ def get_kwargs(hp: Dict[str, Any], prefix: str) -> Dict[str, Any]:
     return kwargs
 
 
-def deepar(hp: Dict[str, Any]):
-    kwargs = {k: v for k, v in hp.items() if "." not in k}
-    for argname in ["trainer", "distr_output"]:
-        if argname in kwargs:
-            klass_name = kwargs[argname]
-            kwargs[argname] = serde.decode(klass_dict(klass_name, [], get_kwargs(hp, argname)))
-    return DeepAREstimator(**kwargs)
-
-
-def deepstate(hp: Dict[str, Any]):
-    kwargs = {k: v for k, v in hp.items() if "." not in k}
-    for argname in ["trainer", "issm", "noise_std_bounds", "prior_cov_bounds", "innovation_bounds"]:
-        if argname in kwargs:
-            klass_name = kwargs[argname]
-            kwargs[argname] = serde.decode(klass_dict(klass_name, [], get_kwargs(hp, argname)))
-    return DeepStateEstimator(**kwargs)
-
-
 def deser_algo_args(hp: Dict[str, Any], deser_list=[]):
     kwargs = {k: v for k, v in hp.items() if "." not in k}
     for argname in deser_list:
@@ -75,36 +53,84 @@ deser_args = {
         "noise_std_bounds",
         "prior_cov_bounds",
         "innovation_bounds",
+        # Optional[List[TimeFeature]],
     ],
+    "gluonts.model.deep_factor.DeepFactorEstimator": ["trainer", "distr_output"],
+    "gluonts.model.transformer.TransformerEstimator": ["trainer", "distr_output"],  # Optional[List[TimeFeature]]
+    "gluonts.model.gp_forecaster.GaussianProcessEstimator": [
+        "trainer",
+        "kernel_output",
+    ],  # Optional[List[TimeFeature]], also cardinality should autodetect from train data?
+    # NPTS: see predictor for the args & kwargs.
+    # NOTE:
+    # - npts doesn't need training, and just straight away predict. However, we still need to use its estimator to fake
+    #   the training to let this script treat this algo exactly the same way as the others, rather than having an edge
+    #   case aka if-else (ugh so yucky).
+    # - kernel_type accepts strings: 'exponential' or 'uniform'. See the enumeration KernelType, so we actually don't
+    #   need to do anything with this kwarg.
+    "gluonts.model.npts.NPTSEstimator": [],  # ["kernel_type"],
 }
 
 
-def train(args, algo_args):
-    """
-    Generic train method that trains a specified estimator on a specified dataset.
-    """
-    estimator_config = klass_dict(args.algo, [], deser_algo_args(algo_args, deser_args[args.algo]))
-    estimator = serde.decode(estimator_config)
-    print(estimator)
-    import sys
+def merge_metadata_hp(hp: Dict[str, Any], metadata: MetaData) -> Dict[str, Any]:
+    """Resolve values to inject to the estimator: is it the hp or the one from metadata.
 
-    sys.exit(0)
-    logger.info("Downloading dataset.")
+    This function:
+    - mitigates errors made by callers when inadvertantly specifies hyperparameters that shouldn't be done, e.g.,
+      the frequency should follow how the data prepared.
+    - uses some metadata values as defaults, unless stated otherwise by the hyperparameters.
+    """
+    hp = hp.copy()
+
+    # Always use freq from dataset.
+    if "freq" in hp and hp["freq"] != metadata.freq:
+        freq_hp = hp["freq"]
+        print(f"freq: set freq='{metadata.freq}' from metadata; ignore '{freq_hp}' from hyperparam.")
+    hp["freq"] = metadata.freq
+
+    # Use prediction_length hyperparameters, but if not specified then fallbacks/defaults to the one from metadata.
+    if "prediction_length" not in hp:
+        hp["prediction_length"] = metadata.prediction_length
+        print(
+            "prediction_length: no hyperparam, so set " f"prediction_length={metadata.prediction_length} from metadata"
+        )
+
+    # TODO: autoprobe cardinalities.
+    warnings.warn("This implementation still ignores cardinality and static features in the metadata", RuntimeWarning)
+
+    return hp
+
+
+def train(args, algo_args):
+    """Train a specified estimator on a specified dataset."""
+    # Load data
     if args.s3_dataset is None:
         # load built in dataset
+        logger.info("Downloading dataset %s", args.dataset)
         dataset = datasets.get_dataset(args.dataset)
     else:
         # load custom dataset
+        logger.info("Loading dataset from %s", args.s3_dataset)
         s3_dataset_dir = Path(args.s3_dataset)
-        dataset = common.load_datasets(
-            metadata=s3_dataset_dir, train=s3_dataset_dir / "train", test=s3_dataset_dir / "test",
-        )
+        dataset = load_datasets(metadata=s3_dataset_dir, train=s3_dataset_dir / "train", test=s3_dataset_dir / "test",)
+
+    # Initialize estimator
+    algo_args = merge_metadata_hp(algo_args, dataset.metadata)
+    estimator_config = klass_dict(args.algo, [], deser_algo_args(algo_args, deser_args[args.algo]))
+    estimator = serde.decode(estimator_config)
+    logger.info("Estimator: %s", estimator)
+    if args.stop_before == "train":
+        logger.info("Early termination: before %s", args.stop_before)
+        return
 
     logger.info("Starting model training.")
     predictor = estimator.train(dataset.train)
     forecast_it, ts_it = backtest.make_evaluation_predictions(
         dataset=dataset.test, predictor=predictor, num_samples=int(args.num_samples),
     )
+    if args.stop_before == "eval":
+        logger.info("Early termination: before %s", args.stop_before)
+        return
 
     logger.info("Starting model evaluation.")
     evaluator = Evaluator(quantiles=eval(args.quantiles))
@@ -198,6 +224,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--algo", type=str, default=os.environ.get("SM_HP_ALGO", "gluonts.model.deepar.DeepAREstimator"),
     )
+    # Debug/dev/test features; source code is the documentation hence, only for developers :).
+    parser.add_argument("--stop_before", type=str, default="")
 
     args, train_args = parser.parse_known_args()
     algo_args = parse_hyperparameters(train_args)

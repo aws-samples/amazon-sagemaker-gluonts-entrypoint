@@ -1,5 +1,5 @@
 {
-  "freq": "M",
+  "freq": "D",
   "target": {
     "name": "gr"
   },
@@ -25,5 +25,5 @@
   ],
   "feat_dynamic_real": [],
   "feat_dynamic_cat": [],
-  "prediction_length": 9
+  "prediction_length": 2
 }
