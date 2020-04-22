@@ -5,12 +5,15 @@ import logging
 import os
 import warnings
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Union
 
+import matplotlib.pyplot as plt
+import pandas as pd
 from gluonts.core import serde
 from gluonts.dataset.common import MetaData, load_datasets
 from gluonts.dataset.repository import datasets
 from gluonts.evaluation import Evaluator, backtest
+from gluonts.model.forecast import Forecast
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s %(message)s", datefmt="[%Y-%m-%d %H:%M:%S]",
@@ -19,6 +22,10 @@ logger = logging.getLogger(__name__)
 
 # TODO: implement model_fn, input_fn, predict_fn, and output_fn !!
 # TODO: segment script for readability
+
+# FIXME: logging stuffs: some function use logging.xxx() -> root logger.
+# FIXME: at the begnning of script, check for logging handler, and add appropriately, and see if elapsed time etc.
+#        appear when we python entrypoint.py ... 2>&1 | grep ...
 
 
 def klass_dict(klass: str, args=[], kwargs={}):
@@ -99,6 +106,44 @@ def merge_metadata_hp(hp: Dict[str, Any], metadata: MetaData) -> Dict[str, Any]:
     return hp
 
 
+class MyEvaluator(Evaluator):
+    def __init__(self, plot_dir: Union[str, os.PathLike], *args, plot_transparent: bool = False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.plot_dir = plot_dir
+        self.plot_ci = [50.0, 90.0]
+        self.plot_transparent = plot_transparent
+        self.i = 0
+
+    def get_metrics_per_ts(
+        self, time_series: Union[pd.Series, pd.DataFrame], forecast: Forecast
+    ) -> Dict[str, Union[float, str, None]]:
+        # Compute the built-in metrics
+        metrics = super().get_metrics_per_ts(time_series, forecast)
+
+        # region: Plotting logics here
+        # logger.info(f"Plot {forecast.item_id}")   # FIXME: this intermingles with tqdm
+        plot_length = 6 + forecast.prediction_length
+        legend = ["observations", "median prediction"] + [f"{k}% prediction interval" for k in self.plot_ci[::-1]]
+        time_series[-plot_length:].plot()  # plot the ground truth (incl. truncated historical)
+        forecast.plot(prediction_intervals=self.plot_ci, color="g")
+        plt.grid(which="both")
+        plt.legend(legend, loc="upper left")
+        plt.gca().set_title(forecast.item_id)
+        plt.savefig(self.plot_dir / f"{self.i:03d}.png", dpi=300, transparent=self.plot_transparent)
+        plt.clf()
+        plt.close()
+        self.i += 1
+        # endregion
+
+        return metrics
+
+
+def mkdir(path: Union[str, os.PathLike]):
+    path = Path(path)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def train(args, algo_args):
     """Train a specified estimator on a specified dataset."""
     # Load data
@@ -121,19 +166,25 @@ def train(args, algo_args):
         logger.info("Early termination: before %s", args.stop_before)
         return
 
-    # Training
+    # Train
     logger.info("Starting model training.")
     predictor = estimator.train(dataset.train)
-    forecast_it, ts_it = backtest.make_evaluation_predictions(
-        dataset=dataset.test, predictor=predictor, num_samples=int(args.num_samples),
-    )
+    # Save
+    model_dir = mkdir(args.model_dir)
+    predictor.serialize(model_dir)
     if args.stop_before == "eval":
         logger.info("Early termination: before %s", args.stop_before)
         return
 
     # Backtesting
     logger.info("Starting model evaluation.")
-    evaluator = Evaluator(quantiles=args.quantiles)
+    forecast_it, ts_it = backtest.make_evaluation_predictions(
+        dataset=dataset.test, predictor=predictor, num_samples=args.num_samples,
+    )
+
+    # Compute standard metrics over all samples or quantiles, and plot each timeseries, all in one go!
+    plot_dir = mkdir(Path(args.output_data_dir) / "plots")
+    evaluator = MyEvaluator(plot_dir=plot_dir, quantiles=args.quantiles, plot_transparent=args.plot_transparent)
     agg_metrics, item_metrics = evaluator(ts_it, forecast_it, num_series=len(dataset.test))
 
     # required for metric tracking.
@@ -146,10 +197,6 @@ def train(args, algo_args):
         json.dump(agg_metrics, f)
     with open(metrics_output_dir / "item_metrics.csv", "w") as f:
         item_metrics.to_csv(f, index=False)
-
-    # save the model
-    model_output_dir = Path(args.model_dir)
-    predictor.serialize(model_output_dir)
 
 
 def parse_hyperparameters(hm) -> Dict[str, Any]:
@@ -208,19 +255,24 @@ if __name__ == "__main__":
     # an alternative way to load hyperparameters via SM_HPS environment variable.
     parser.add_argument("--sm-hps", type=json.loads, default=os.environ.get("SM_HPS", {}))
 
-    # input data, output dir and model directories
+    # SageMaker protocols: input data, output dir and model directories
     parser.add_argument("--model-dir", type=str, default=os.environ.get("SM_MODEL_DIR", "model"))
-    parser.add_argument("--output-data_dir", type=str, default=os.environ.get("SM_OUTPUT_DATA_DIR", "output"))
-    # parser.add_argument("--input-dir", type=str, default=os.environ.get("SM_INPUT_DIR", "input"))
-    parser.add_argument("--s3-dataset", type=str, default=os.environ.get("SM_CHANNEL_S3-DATASET", None))
+    parser.add_argument("--output-data-dir", type=str, default=os.environ.get("SM_OUTPUT_DATA_DIR", "output"))
+    parser.add_argument("--s3-dataset", type=str, default=os.environ.get("SM_CHANNEL_S3_DATASET", None))
     parser.add_argument("--dataset", type=str, default=os.environ.get("SM_HP_DATASET", ""))
+
+    # Arguments for evaluators
     parser.add_argument("--num-samples", type=int, default=os.environ.get("SM_HP_NUM_SAMPLES", 100))
     parser.add_argument(
-        "--quantiles", default=os.environ.get("SM_HP_QUANTILES", [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
+        "--quantiles", default=os.environ.get("SM_HP_QUANTILES", [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
     )
     parser.add_argument(
-        "--algo", type=str, default=os.environ.get("SM_HP_ALGO", "gluonts.model.deepar.DeepAREstimator"),
+        "--algo", type=str, default=os.environ.get("SM_HP_ALGO", "gluonts.model.deepar.DeepAREstimator")
     )
+
+    # Argumets for plots
+    parser.add_argument("--plot-transparent", type=int, default=os.environ.get("SM_HP_PLOT_TRANSPARENT", 0))
+
     # Debug/dev/test features; source code is the documentation hence, only for developers :).
     parser.add_argument("--stop_before", type=str, default="")
 
