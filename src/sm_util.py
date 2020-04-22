@@ -199,7 +199,7 @@ class MyEvaluator(Evaluator):
         self.plot_ci = [50.0, 90.0]
         self.plot_transparent = plot_transparent
         self.figure, self.ax = plt.subplots(figsize=(8, 4.5), dpi=300)
-        self.smp = SimpleMatrixPlotter(ncols=5)
+        self.smp = SimpleMatrixPlotter(ncols=5, init_figcount=self.ts_count)
         self.i = 0
 
     def get_metrics_per_ts(

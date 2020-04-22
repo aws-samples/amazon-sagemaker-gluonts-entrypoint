@@ -4,8 +4,13 @@ import json
 import logging
 import os
 import sys
+import warnings
 from pathlib import Path
 from typing import Any, Dict
+
+import matplotlib.cbook
+
+warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
 
 # try block to prevent isort shifting the import statements.
 # See also: https://github.com/timothycrosley/isort/issues/295#issuecomment-570898035
@@ -219,7 +224,7 @@ if __name__ == "__main__":
     # SageMaker protocols: input data, output dir and model directories
     parser.add_argument("--model-dir", type=str, default=os.environ.get("SM_MODEL_DIR", "model"))
     parser.add_argument("--output-data-dir", type=str, default=os.environ.get("SM_OUTPUT_DATA_DIR", "output"))
-    parser.add_argument("--s3-dataset", type=str, default=os.environ.get("SM_CHANNEL_S3_DATASET", None))
+    parser.add_argument("--s3_dataset", type=str, default=os.environ.get("SM_CHANNEL_S3_DATASET", None))
     parser.add_argument("--dataset", type=str, default=os.environ.get("SM_HP_DATASET", ""))
 
     # Arguments for evaluators
