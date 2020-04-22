@@ -197,7 +197,7 @@ class MyEvaluator(Evaluator):
         self.ts_count = ts_count  # FIXME: workaround until SimpleMatrixPlotter can dynamically adds axes
         self.plot_ci = [50.0, 90.0]
         self.plot_transparent = plot_transparent
-        self.figure, self.ax = plt.subplots(figsize=(4, 3), dpi=300)
+        self.figure, self.ax = plt.subplots(figsize=(8, 4.5), dpi=300)
         self.smp = SimpleMatrixPlotter(ncols=5)
         self.i = 0
 
