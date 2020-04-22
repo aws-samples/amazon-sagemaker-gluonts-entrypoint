@@ -174,7 +174,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, default=os.environ.get("SM_HP_DATASET", ""))
 
     # Arguments for evaluators
-    parser.add_argument("--num-samples", type=int, default=os.environ.get("SM_HP_NUM_SAMPLES", 100))
+    parser.add_argument("--num_samples", type=int, default=os.environ.get("SM_HP_NUM_SAMPLES", 100))
     parser.add_argument(
         "--quantiles", default=os.environ.get("SM_HP_QUANTILES", [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
     )
@@ -183,11 +183,12 @@ if __name__ == "__main__":
     )
 
     # Argumets for plots
-    parser.add_argument("--plot-transparent", type=int, default=os.environ.get("SM_HP_PLOT_TRANSPARENT", 0))
+    parser.add_argument("--plot_transparent", type=int, default=os.environ.get("SM_HP_PLOT_TRANSPARENT", 0))
 
     # Debug/dev/test features; source code is the documentation hence, only for developers :).
     parser.add_argument("--stop_before", type=str, default="")
 
+    logger.info("CLI args to entrypoint script: %s", sys.argv)
     args, train_args = parser.parse_known_args()
     algo_args = parse_hyperparameters(train_args)
     train(args, algo_args)

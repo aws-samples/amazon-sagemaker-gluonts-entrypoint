@@ -1,0 +1,2 @@
+gluonts==0.4.2
+pydantic<1.5.*
