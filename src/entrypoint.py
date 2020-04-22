@@ -7,11 +7,60 @@ import sys
 from pathlib import Path
 from typing import Any, Dict
 
-from gluonts.dataset.common import load_datasets
-from gluonts.dataset.repository import datasets
-from gluonts.evaluation import backtest
+# try block to prevent isort shifting the import statements.
+# See also: https://github.com/timothycrosley/isort/issues/295#issuecomment-570898035
+try:
+    # region: quiet tqdm
 
-from sm_util import MyEvaluator, hp2estimator, mkdir
+    # This stanza must appear before any module that uses tqdm.
+    # https://github.com/tqdm/tqdm/issues/619#issuecomment-425234504
+
+    # By default, disable tqdm if we believe we're running under SageMaker. This has to be done before importing any other
+    # modules that use tqdm.
+    if "SM_HOSTS" in os.environ:
+        print("Env. var SM_HOSTS detected. Silencing tqdm as we're likely to run on SageMaker...")
+        import tqdm
+        from tqdm import auto as tqdm_auto
+
+        old_auto_tqdm = tqdm_auto.tqdm
+
+        def nop_tqdm_off(*a, **k):
+            k["disable"] = True
+            return old_auto_tqdm(*a, **k)
+
+        tqdm_auto.tqdm = (
+            nop_tqdm_off  # For download, completely disable progress bars: large models, lots of stuffs printed.
+        )
+
+        # Used by run_ner.py
+        old_tqdm = tqdm.tqdm
+
+        def nop_tqdm(*a, **k):
+            k["ncols"] = 0
+            k["mininterval"] = 3600
+            return old_tqdm(*a, **k)
+
+        tqdm.tqdm = nop_tqdm
+
+        # Used by run_ner.py
+        old_trange = tqdm.trange
+
+        def nop_trange(*a, **k):
+            k["ncols"] = 0
+            k["mininterval"] = 3600
+            return old_trange(*a, **k)
+
+        tqdm.trange = nop_trange
+    # endregion: quiet tqdm
+
+    from gluonts.dataset.common import load_datasets
+    from gluonts.dataset.repository import datasets
+    from gluonts.evaluation import backtest
+
+    from sm_util import MyEvaluator, hp2estimator, mkdir
+except:  # noqa: E722
+    raise
+
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s %(message)s", datefmt="[%Y-%m-%d %H:%M:%S]",
