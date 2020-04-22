@@ -1,3 +1,4 @@
+import logging
 import os
 import warnings
 from pathlib import Path
@@ -84,13 +85,13 @@ def merge_metadata_hp(hp: Dict[str, Any], metadata: MetaData) -> Dict[str, Any]:
     # Always use freq from dataset.
     if "freq" in hp and hp["freq"] != metadata.freq:
         freq_hp = hp["freq"]
-        print(f"freq: set freq='{metadata.freq}' from metadata; ignore '{freq_hp}' from hyperparam.")
+        logging.info(f"freq: set freq='{metadata.freq}' from metadata; ignore '{freq_hp}' from hyperparam.")
     hp["freq"] = metadata.freq
 
     # Use prediction_length hyperparameters, but if not specified then fallbacks/defaults to the one from metadata.
     if "prediction_length" not in hp:
         hp["prediction_length"] = metadata.prediction_length
-        print(
+        logging.info(
             "prediction_length: no hyperparam, so set " f"prediction_length={metadata.prediction_length} from metadata"
         )
 

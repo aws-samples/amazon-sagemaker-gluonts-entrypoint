@@ -3,6 +3,7 @@ import argparse
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict
 
@@ -23,6 +24,32 @@ logger = logging.getLogger(__name__)
 # FIXME: logging stuffs: some function use logging.xxx() -> root logger.
 # FIXME: at the begnning of script, check for logging handler, and add appropriately, and see if elapsed time etc.
 #        appear when we python entrypoint.py ... 2>&1 | grep ...
+
+# Training & batch transform has different logging handler.
+if logging.root.handlers == []:
+    # Training: no logging handler, so we need to setup one to stdout.
+    # Reason to use stdout: xgboost script mode swallows stderr.
+    print("Add logging handle to stdout")
+    ch = logging.StreamHandler(sys.stdout)
+    print("1000: created stream handler")
+    ch.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+    print("2000: formatted stream handler")
+    logger.addHandler(ch)
+    print("3000: added stream handler to logger")
+
+
+def print_logging_setup(logger):
+    """Walkthrough logger hierarchy and print details of each logger.
+
+    Print to stdout to make sure CloudWatch pick it up, regardless of how logger handler is setup.
+    """
+    lgr = logging.getLogger(__name__)
+    while lgr is not None:
+        print("level: {}, name: {}, handlers: {}".format(lgr.level, lgr.name, lgr.handlers))
+        lgr = lgr.parent
+
+
+print_logging_setup(logger)
 
 
 def train(args, algo_args):
