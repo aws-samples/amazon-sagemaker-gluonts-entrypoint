@@ -1,4 +1,5 @@
 # Based on glounts/nursery/sagemaker_sdk/entrypoint_scripts/train_entry_point.py
+# TODO: implement model_fn, input_fn, predict_fn, and output_fn !!
 import argparse
 import json
 import logging
@@ -20,8 +21,8 @@ try:
     # This stanza must appear before any module that uses tqdm.
     # https://github.com/tqdm/tqdm/issues/619#issuecomment-425234504
 
-    # By default, disable tqdm if we believe we're running under SageMaker. This has to be done before importing any other
-    # modules that use tqdm.
+    # By default, disable tqdm if we believe we're running under SageMaker. This has to be done before importing any
+    # other module that uses tqdm.
     if "SM_HOSTS" in os.environ:
         print("Env. var SM_HOSTS detected. Silencing tqdm as we're likely to run on SageMaker...")
         import tqdm
@@ -62,22 +63,15 @@ try:
     from gluonts.dataset.repository import datasets
     from gluonts.evaluation import backtest
 
-    from sm_util import MyEvaluator, hp2estimator, mkdir
+    from sm_util import hp2estimator, mkdir
+    from evaluator import MyEvaluator
 except:  # noqa: E722
     raise
-
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s %(message)s", datefmt="[%Y-%m-%d %H:%M:%S]",
 )
 logger = logging.getLogger(__name__)
-
-# TODO: implement model_fn, input_fn, predict_fn, and output_fn !!
-# TODO: segment script for readability
-
-# FIXME: logging stuffs: some function use logging.xxx() -> root logger.
-# FIXME: at the begnning of script, check for logging handler, and add appropriately, and see if elapsed time etc.
-#        appear when we python entrypoint.py ... 2>&1 | grep ...
 
 # Training & batch transform has different logging handler.
 if logging.root.handlers == []:
