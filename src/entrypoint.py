@@ -111,7 +111,7 @@ def train(args, algo_args):
         # load custom dataset
         logger.info("Loading dataset from %s", args.s3_dataset)
         s3_dataset_dir = Path(args.s3_dataset)
-        dataset = load_datasets(metadata=s3_dataset_dir, train=s3_dataset_dir / "train", test=s3_dataset_dir / "test",)
+        dataset = load_datasets(metadata=s3_dataset_dir / "metadata", train=s3_dataset_dir / "train", test=s3_dataset_dir / "test",)
 
     # Initialize estimator
     estimator = hp2estimator(args.algo, algo_args, dataset.metadata)
