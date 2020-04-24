@@ -1,3 +1,4 @@
+import json
 import os
 from typing import Any, Dict, Tuple, Union
 
@@ -5,30 +6,44 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from gluonts.evaluation import Evaluator
-from gluonts.model.forecast import Forecast
+from gluonts.model.forecast import Config, Forecast
 
 from metrics import wmape
 from sm_util import mkdir
 
+output_configuration = Config(quantiles=["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9"])
+
 
 class MyEvaluator(Evaluator):
     # NOTE: we must not write anything to stdout or stderr, otherwise will intermingle with tqdm progress bar!!!
-    def __init__(self, plot_dir: os.PathLike, ts_count: int, *args, plot_transparent: bool = False, **kwargs):
+    def __init__(self, out_dir: os.PathLike, ts_count: int, *args, plot_transparent: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
-        self.plot_dir = plot_dir
+        self.out_dir = mkdir(out_dir)
+        self.out_fname = self.out_dir / "results.jsonl"
+        self.plot_dir = mkdir(self.out_dir / "plots")
         self.plot_single_dir = mkdir(self.plot_dir / "single")
+
+        # Plot configurations
         self.ts_count = ts_count  # FIXME: workaround until SimpleMatrixPlotter can dynamically adds axes
         self.plot_ci = [50.0, 90.0]
         self.plot_transparent = plot_transparent
         self.figure, self.ax = plt.subplots(figsize=(8, 4.5), dpi=300)
         self.smp = SimpleMatrixPlotter(ncols=5, init_figcount=self.ts_count)
+
+        # A running counter
         self.i = 0
+
+        self.out_f = self.out_fname.open("w")
 
     def get_metrics_per_ts(
         self, time_series: Union[pd.Series, pd.DataFrame], forecast: Forecast
     ) -> Dict[str, Union[float, str, None]]:
         # Compute the built-in metrics
         metrics = super().get_metrics_per_ts(time_series, forecast)
+
+        result: Dict[str, Any] = {"item_id": str(forecast.item_id), **forecast.as_json_dict(output_configuration)}
+        json.dump(result, self.out_f)
+        self.out_f.write("\n")
 
         # region: custom metrics.
         # Follow gluonts.evaluation.Evaluator who uses median

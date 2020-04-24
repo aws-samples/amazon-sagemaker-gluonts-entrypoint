@@ -35,7 +35,6 @@ def deser_algo_args(hp: Dict[str, Any], deser_list=[]):
     for argname in deser_list:
         if argname in kwargs:
             klass_name = kwargs[argname]
-            # kwargs[argname] = serde.decode(klass_dict(klass_name, [], get_kwargs(hp, argname)))
             kwargs[argname] = klass_dict(klass_name, [], get_kwargs(hp, argname))
     return kwargs
 
