@@ -291,4 +291,11 @@ class SimpleMatrixPlotter(object):
         self.trim()
         kwargs["bbox_inches"] = "tight"
         self.fig.savefig(*args, **kwargs)
+        # Whatever possible ways to release figure
+        self.fig.clear()
+        self.fig.clf()
         plt.close(self.fig)
+        del self.fig
+        del self.axes
+        del self.flatten_axes
+        self.fig = self.axes = self.flatten_axes = None
