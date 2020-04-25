@@ -109,19 +109,18 @@ class MyEvaluator(Evaluator):
     def plot_prob_forecasts(ax, time_series, forecast, intervals, past_length=8):
         plot_length = past_length + forecast.prediction_length
         time_series[0][-plot_length:].plot(ax=ax, label="actual")
-        #forecast.plot(prediction_intervals=intervals, color="g", show_mean=True)
+        # forecast.plot(prediction_intervals=intervals, color="g", show_mean=True)
         MyEvaluator.plot2(forecast, prediction_intervals=intervals, show_mean=True)
         plt.grid(which="both")
         plt.legend(loc="upper left")
         plt.gca().set_title(forecast.item_id.replace("|", "\n"))
-
 
     @staticmethod
     def plot2(
         forecast,
         prediction_intervals=(50.0, 90.0),
         show_mean=False,
-        color="g",   # This is for alpha (CI range)
+        color="g",  # This is for alpha (CI range)
         label=None,
         output_file=None,
         *args,
@@ -137,15 +136,11 @@ class MyEvaluator(Evaluator):
         for c in prediction_intervals:
             assert 0.0 <= c <= 100.0
 
-        ps = [50.0] + [
-            50.0 + f * c / 2.0
-            for c in prediction_intervals
-            for f in [-1.0, +1.0]
-        ]
+        ps = [50.0] + [50.0 + f * c / 2.0 for c in prediction_intervals for f in [-1.0, +1.0]]
         percentiles_sorted = sorted(set(ps))
 
         def alpha_for_percentile(p):
-            return (p / 100.0) ** 0.5   # marcverd: increase transparency
+            return (p / 100.0) ** 0.5  # marcverd: increase transparency
 
         ps_data = [forecast.quantile(p / 100.0) for p in percentiles_sorted]
         i_p50 = len(percentiles_sorted) // 2
@@ -157,11 +152,7 @@ class MyEvaluator(Evaluator):
         if show_mean:
             mean_data = np.mean(forecast._sorted_samples, axis=0)
             pd.Series(data=mean_data, index=forecast.index).plot(
-                color="xkcd:crimson",
-                ls=":",
-                label=f"{label_prefix}mean",
-                *args,
-                **kwargs,
+                color="xkcd:crimson", ls=":", label=f"{label_prefix}mean", *args, **kwargs,
             )
 
         for i in range(len(percentiles_sorted) // 2):
@@ -180,15 +171,11 @@ class MyEvaluator(Evaluator):
             # Hack to create labels for the error intervals.
             # Doesn't actually plot anything, because we only pass a single data point
             pd.Series(data=p50_data[:1], index=forecast.index[:1]).plot(
-                color=color,
-                alpha=alpha,
-                linewidth=8,
-                label=f"{label_prefix}{100 - ptile * 2}%",
-                *args,
-                **kwargs,
+                color=color, alpha=alpha, linewidth=8, label=f"{label_prefix}{100 - ptile * 2}%", *args, **kwargs,
             )
         if output_file:
             plt.savefig(output_file)
+
 
 # This is a snapshot from mlsl's mlmax library.
 class SimpleMatrixPlotter(object):
@@ -237,10 +224,8 @@ class SimpleMatrixPlotter(object):
         if ncols == "square":
             ncols = min(max(5, int(math.sqrt(init_figcount))), 20)
         nrows = init_figcount // ncols + (init_figcount % ncols > 0)
-        self.fig, _ = plt.subplots(
-            nrows=nrows, ncols=ncols, figsize=(figsize[0] * ncols, figsize[1] * nrows), dpi=100
-        )
-        self.axes = self.fig.axes   # Cache list of axes returned by self.fig.axes
+        self.fig, _ = plt.subplots(nrows=nrows, ncols=ncols, figsize=(figsize[0] * ncols, figsize[1] * nrows), dpi=100)
+        self.axes = self.fig.axes  # Cache list of axes returned by self.fig.axes
         self.fig.subplots_adjust(hspace=0.35)
         self._i = 0  # Index of the current free subplot
 
@@ -285,7 +270,7 @@ class SimpleMatrixPlotter(object):
     def trim(self):
         for ax in self.axes[self._i :]:
             self.fig.delaxes(ax)
-        self.axes = self.axes[:self._i]
+        self.axes = self.axes[: self._i]
 
     def savefig(self, *args, **kwargs):
         self.trim()
