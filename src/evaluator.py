@@ -1,5 +1,7 @@
 import json
+import math
 import os
+import warnings
 from typing import Any, Dict, Tuple, Union
 
 import matplotlib.pyplot as plt
@@ -12,6 +14,15 @@ from metrics import wmape
 from sm_util import mkdir
 
 output_configuration = Config(quantiles=["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9"])
+# fmt: off
+plt.rcParams.update({
+    "legend.fontsize": 8,
+    "axes.labelsize": 8,
+    "axes.titlesize": 10,
+    "xtick.labelsize": 8,
+    "ytick.labelsize": 8
+})
+# fmt: on
 
 
 class MyEvaluator(Evaluator):
@@ -27,8 +38,8 @@ class MyEvaluator(Evaluator):
         self.ts_count = ts_count  # FIXME: workaround until SimpleMatrixPlotter can dynamically adds axes
         self.plot_ci = [50.0, 90.0]
         self.plot_transparent = plot_transparent
-        self.figure, self.ax = plt.subplots(figsize=(8, 4.5), dpi=300)
-        self.smp = SimpleMatrixPlotter(ncols=5, init_figcount=self.ts_count)
+        self.figure, self.ax = plt.subplots(figsize=(6.4, 4.8), dpi=100, tight_layout=True)
+        self.smp = SimpleMatrixPlotter(init_figcount=self.ts_count)
 
         # A running counter
         self.i = 0
@@ -56,10 +67,8 @@ class MyEvaluator(Evaluator):
         # endregion: custom metrics
 
         # region: plottings
-        # As a subplot in the grid plotter
-        plt.figure(self.smp.fig.number)
-        self.smp.pop()
-        self.plot_prob_forecasts(plt.gca(), time_series, forecast, self.plot_ci)
+        # Add to montage
+        self.plot_prob_forecasts(self.smp.pop(), time_series, forecast, self.plot_ci)
 
         # Plot & save as a single image
         plt.figure(self.figure.number)
@@ -90,11 +99,8 @@ class MyEvaluator(Evaluator):
         totals.update(my_totals)
         # endregion
 
-        # region: save montage
-        self.smp.trim()
-        self.smp.fig.tight_layout()
-        self.smp.fig.savefig(self.plot_dir / "plots.png", transparency=self.plot_transparent)
-        # endregion: montage
+        # Save montage
+        self.smp.savefig(self.plot_dir / "plots.png", transparency=self.plot_transparent)
 
         return totals, metrics_per_ts
 
@@ -106,7 +112,7 @@ class MyEvaluator(Evaluator):
         forecast.plot(prediction_intervals=intervals, color="g")
         plt.grid(which="both")
         plt.legend(legend, loc="upper left")
-        plt.gca().set_title(forecast.item_id)
+        plt.gca().set_title(forecast.item_id.replace("|", "\n"))
 
 
 # This is a snapshot from mlsl's mlmax library.
@@ -119,42 +125,55 @@ class SimpleMatrixPlotter(object):
     >>> df = pd.DataFrame({'a': [1,1,1,2,2,2,3,3,3,4,4]})
     >>> gb = df.groupby(by=['a'])
     >>>
-    >>> smp_1 = SimpleMatrixPlotter(gb.ngroups)
+    >>> smp = SimpleMatrixPlotter(gb.ngroups)
     >>> for group_name, df_group in gb:
     >>>     ax, _ = smp_1.add(df_group.plot)
     >>>     assert ax == _
     >>>     ax.set_title(f"Item={group_name}")
-    >>> smp_1.trim()
-    >>> plt.savefig('/tmp/testfigure.png')   # or: plt.show()
-    >>>
+    >>> # smp.trim(); plt.show()
+    >>> smp.savefig("/tmp/testfigure.png")  # After this, figure & axes are gone.
 
     Alternative usage using pop():
 
-    >>> smp_2 = SimpleMatrixPlotter(gb.ngroups)
+    >>> smp = SimpleMatrixPlotter(gb.ngroups)
     >>> for group_name, df_group in gb:
-    >>>     ax = smp_2.pop()
+    >>>     ax = smp.pop()
     >>>     df_group.plot(ax=ax, title=f"Item={group_name}")
-    >>> smp_2.trim()
-    >>> plt.savefig('/tmp/testfigure.png')   # or: plt.show()
+    >>> # smp.trim(); plt.show()
+    >>> smp.savefig("/tmp/testfigure.png")  # After this, figure & axes are gone.
 
     Attributes:
         i (int): Index of the currently free subplot
     """
 
-    def __init__(self, ncols: int = 3, init_figcount: int = 5, figscale=(6, 4)):
+    def __init__(
+        self, ncols: Union[str, int] = "square", init_figcount: int = 5, figsize=(6.4, 4.8), dpi=100, **kwargs
+    ):
         """Initialize a ``SimpleMatrixPlotter`` instance.
 
         Args:
-            ncols (int, optional): Number of columns. Defaults to 3.
+            ncols (int, optional): Number of columns. Passing "square" means to set to sqrt(init_figcount) clipped at
+                5 and 20. Defaults to "square".
             init_figcount (int, optional): Total number of subplots. Defaults to 5.
+            figsize: size per subplot, see figsize for matplotlib. Defaults to (6.4, 4.8).
+            dpi: dot per inch, see matplotlib. Defaults to 100.
         """
         # Initialize subplots
+        if ncols == "square":
+            ncols = min(max(5, int(math.sqrt(init_figcount))), 20)
         nrows = init_figcount // ncols + (init_figcount % ncols > 0)
-        self.fig, self.axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(figscale[0] * ncols, figscale[1] * nrows))
+        self.fig, self.axes = plt.subplots(
+            nrows=nrows, ncols=ncols, figsize=(figsize[0] * ncols, figsize[1] * nrows), dpi=100
+        )
         self.flatten_axes = self.axes.flatten()
-        plt.subplots_adjust(hspace=0.35)
+        self.fig.subplots_adjust(hspace=0.35)
 
         self._i = 0  # Index of the current free subplot
+
+        # Warn if initial pixels exceed matplotlib limit.
+        pixels = np.ceil(self.fig.get_size_inches() * self.fig.dpi).astype("int")
+        if (pixels > 2 ** 16).any():
+            warnings.warn(f"Initial figure is {pixels} pixels, and at least one dimension exceeds 65536 pixels.")
 
     @property
     def i(self):
@@ -162,7 +181,7 @@ class SimpleMatrixPlotter(object):
         return self._i
 
     def add(self, plot_fun, *args, **kwargs) -> Tuple[plt.Axes, Any]:
-        """Fill the current free subplot using `plot_fun()`.
+        """Fill the current free subplot using `plot_fun()`, and set the axes and figure as the current ones.
 
         Args:
             plot_fun (callable): A function that must accept `ax` keyword argument.
@@ -170,25 +189,31 @@ class SimpleMatrixPlotter(object):
         Returns:
             (plt.Axes, Any): a tuple of (axes, return value of plot_fun).
         """
-        # TODO: extend with new subplots:
-        # http://matplotlib.1069221.n5.nabble.com/dynamically-add-subplots-to-figure-td23571.html#a23572
-        ax = self.flatten_axes[self._i]
+        ax = self.pop()
         retval = plot_fun(*args, ax=ax, **kwargs)
-
-        self._i += 1
         return ax, retval
 
     def pop(self) -> plt.Axes:
-        """Get the next axes in this subplot, and set the it as the current axes.
+        """Get the next axes in this subplot, and set the it and its figure as the current axes and figure,
+        respectively.
 
         Returns:
             plt.Axes: the next axes
         """
+        # TODO: extend with new subplots:
+        # http://matplotlib.1069221.n5.nabble.com/dynamically-add-subplots-to-figure-td23571.html#a23572
         ax = self.flatten_axes[self._i]
         plt.sca(ax)
+        plt.figure(self.fig.number)
         self._i += 1
         return ax
 
     def trim(self):
         for ax in self.flatten_axes[self._i :]:
             self.fig.delaxes(ax)
+
+    def savefig(self, *args, **kwargs):
+        self.trim()
+        kwargs["bbox_inches"] = "tight"
+        self.fig.savefig(*args, **kwargs)
+        plt.close(self.fig)
