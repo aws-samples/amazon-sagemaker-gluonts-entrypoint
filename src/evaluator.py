@@ -20,7 +20,8 @@ plt.rcParams.update({
     "axes.labelsize": 8,
     "axes.titlesize": 10,
     "xtick.labelsize": 8,
-    "ytick.labelsize": 8
+    "ytick.labelsize": 8,
+    "legend.borderpad": 0.8,
 })
 # fmt: on
 
@@ -107,13 +108,87 @@ class MyEvaluator(Evaluator):
     @staticmethod
     def plot_prob_forecasts(ax, time_series, forecast, intervals, past_length=8):
         plot_length = past_length + forecast.prediction_length
-        legend = ["observations", "median prediction"] + [f"{k}% prediction interval" for k in intervals[::-1]]
-        time_series[-plot_length:].plot(ax=ax)  # plot the ground truth (incl. truncated historical)
-        forecast.plot(prediction_intervals=intervals, color="g")
+        time_series[0][-plot_length:].plot(ax=ax, label="actual")
+        #forecast.plot(prediction_intervals=intervals, color="g", show_mean=True)
+        MyEvaluator.plot2(forecast, prediction_intervals=intervals, show_mean=True)
         plt.grid(which="both")
-        plt.legend(legend, loc="upper left")
+        plt.legend(loc="upper left")
         plt.gca().set_title(forecast.item_id.replace("|", "\n"))
 
+
+    @staticmethod
+    def plot2(
+        forecast,
+        prediction_intervals=(50.0, 90.0),
+        show_mean=False,
+        color="g",   # This is for alpha (CI range)
+        label=None,
+        output_file=None,
+        *args,
+        **kwargs,
+    ):
+        """Customized version of gluonts.model.forecast.Forecast: change median and mean to other than green,
+        increase transparencyi of interval filling.
+
+        The rest are exactly the same as the original.
+        """
+        label_prefix = "" if label is None else label + "-"
+
+        for c in prediction_intervals:
+            assert 0.0 <= c <= 100.0
+
+        ps = [50.0] + [
+            50.0 + f * c / 2.0
+            for c in prediction_intervals
+            for f in [-1.0, +1.0]
+        ]
+        percentiles_sorted = sorted(set(ps))
+
+        def alpha_for_percentile(p):
+            return (p / 100.0) ** 0.5   # marcverd: increase transparency
+
+        ps_data = [forecast.quantile(p / 100.0) for p in percentiles_sorted]
+        i_p50 = len(percentiles_sorted) // 2
+
+        p50_data = ps_data[i_p50]
+        p50_series = pd.Series(data=p50_data, index=forecast.index)
+        p50_series.plot(color="xkcd:maroon", ls="-", label=f"{label_prefix}median")
+
+        if show_mean:
+            mean_data = np.mean(forecast._sorted_samples, axis=0)
+            pd.Series(data=mean_data, index=forecast.index).plot(
+                color="xkcd:crimson",
+                ls=":",
+                label=f"{label_prefix}mean",
+                *args,
+                **kwargs,
+            )
+
+        for i in range(len(percentiles_sorted) // 2):
+            ptile = percentiles_sorted[i]
+            alpha = alpha_for_percentile(ptile)
+            plt.fill_between(
+                forecast.index,
+                ps_data[i],
+                ps_data[-i - 1],
+                facecolor=color,
+                alpha=alpha,
+                interpolate=True,
+                *args,
+                **kwargs,
+            )
+            # Hack to create labels for the error intervals.
+            # Doesn't actually plot anything, because we only pass a single data point
+            pd.Series(data=p50_data[:1], index=forecast.index[:1]).plot(
+                color=color,
+                alpha=alpha,
+                linewidth=8,
+                label=f"{label_prefix}{100 - ptile * 2}%",
+                *args,
+                **kwargs,
+            )
+        if output_file:
+            plt.savefig(output_file)
 
 # This is a snapshot from mlsl's mlmax library.
 class SimpleMatrixPlotter(object):
