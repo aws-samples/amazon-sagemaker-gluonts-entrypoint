@@ -237,12 +237,11 @@ class SimpleMatrixPlotter(object):
         if ncols == "square":
             ncols = min(max(5, int(math.sqrt(init_figcount))), 20)
         nrows = init_figcount // ncols + (init_figcount % ncols > 0)
-        self.fig, self.axes = plt.subplots(
+        self.fig, _ = plt.subplots(
             nrows=nrows, ncols=ncols, figsize=(figsize[0] * ncols, figsize[1] * nrows), dpi=100
         )
-        self.flatten_axes = self.axes.flatten()
+        self.axes = self.fig.axes   # Cache list of axes returned by self.fig.axes
         self.fig.subplots_adjust(hspace=0.35)
-
         self._i = 0  # Index of the current free subplot
 
         # Warn if initial pixels exceed matplotlib limit.
@@ -277,25 +276,23 @@ class SimpleMatrixPlotter(object):
         """
         # TODO: extend with new subplots:
         # http://matplotlib.1069221.n5.nabble.com/dynamically-add-subplots-to-figure-td23571.html#a23572
-        ax = self.flatten_axes[self._i]
+        ax = self.axes[self._i]
         plt.sca(ax)
         plt.figure(self.fig.number)
         self._i += 1
         return ax
 
     def trim(self):
-        for ax in self.flatten_axes[self._i :]:
+        for ax in self.axes[self._i :]:
             self.fig.delaxes(ax)
+        self.axes = self.axes[:self._i]
 
     def savefig(self, *args, **kwargs):
         self.trim()
         kwargs["bbox_inches"] = "tight"
         self.fig.savefig(*args, **kwargs)
         # Whatever possible ways to release figure
-        self.fig.clear()
         self.fig.clf()
         plt.close(self.fig)
         del self.fig
-        del self.axes
-        del self.flatten_axes
-        self.fig = self.axes = self.flatten_axes = None
+        self.fig = None
