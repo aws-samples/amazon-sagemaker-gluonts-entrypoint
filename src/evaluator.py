@@ -2,7 +2,8 @@ import json
 import math
 import os
 import warnings
-from typing import Any, Dict, Tuple, Union
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -28,7 +29,7 @@ plt.rcParams.update({
 
 class MyEvaluator(Evaluator):
     # NOTE: we must not write anything to stdout or stderr, otherwise will intermingle with tqdm progress bar!!!
-    def __init__(self, out_dir: os.PathLike, ts_count: int, *args, plot_transparent: bool = False, **kwargs):
+    def __init__(self, out_dir: os.PathLike, *args, plot_transparent: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
         self.out_dir = mkdir(out_dir)
         self.out_fname = self.out_dir / "results.jsonl"
@@ -36,13 +37,14 @@ class MyEvaluator(Evaluator):
         self.plot_single_dir = mkdir(self.plot_dir / "single")
 
         # Plot configurations
-        self.ts_count = ts_count  # FIXME: workaround until SimpleMatrixPlotter can dynamically adds axes
         self.plot_ci = [50.0, 90.0]
         self.plot_transparent = plot_transparent
         self.figure, self.ax = plt.subplots(figsize=(6.4, 4.8), dpi=100, tight_layout=True)
-        self.smp = SimpleMatrixPlotter(init_figcount=self.ts_count)
+        self.mp = MontagePager(
+            self.out_dir / "plots", page_size=100, savefig_kwargs={"transparent": self.plot_transparent}
+        )
 
-        # A running counter
+        # A running counter for individual image files.
         self.i = 0
 
         self.out_f = self.out_fname.open("w")
@@ -53,6 +55,7 @@ class MyEvaluator(Evaluator):
         # Compute the built-in metrics
         metrics = super().get_metrics_per_ts(time_series, forecast)
 
+        # Write forecast results to output file.
         result: Dict[str, Any] = {"item_id": str(forecast.item_id), **forecast.as_json_dict(output_configuration)}
         json.dump(result, self.out_f)
         self.out_f.write("\n")
@@ -69,7 +72,7 @@ class MyEvaluator(Evaluator):
 
         # region: plottings
         # Add to montage
-        self.plot_prob_forecasts(self.smp.pop(), time_series, forecast, self.plot_ci)
+        self.plot_prob_forecasts(self.mp.pop(), time_series, forecast, self.plot_ci)
 
         # Plot & save as a single image
         plt.figure(self.figure.number)
@@ -101,7 +104,10 @@ class MyEvaluator(Evaluator):
         # endregion
 
         # Save montage
-        self.smp.savefig(self.plot_dir / "plots.png", transparency=self.plot_transparent)
+        self.mp.savefig()
+
+        # Make sure to flush buffered results to the disk.
+        self.out_f.close()
 
         return totals, metrics_per_ts
 
@@ -122,12 +128,12 @@ class MyEvaluator(Evaluator):
         show_mean=False,
         color="g",  # This is for alpha (CI range)
         label=None,
-        output_file=None,
         *args,
         **kwargs,
     ):
-        """Customized version of gluonts.model.forecast.Forecast: change median and mean to other than green,
-        increase transparencyi of interval filling.
+        """Customize gluonts.model.forecast.Forecast.
+
+        Notable changes: change median and mean to other than green, increase transparencyi of interval filling.
 
         The rest are exactly the same as the original.
         """
@@ -173,11 +179,11 @@ class MyEvaluator(Evaluator):
             pd.Series(data=p50_data[:1], index=forecast.index[:1]).plot(
                 color=color, alpha=alpha, linewidth=8, label=f"{label_prefix}{100 - ptile * 2}%", *args, **kwargs,
             )
-        if output_file:
-            plt.savefig(output_file)
 
 
-# This is a snapshot from mlsl's mlmax library.
+################################################################################
+# Visualization utilities -- these are a snapshot from mlsl's mlmax library.
+################################################################################
 class SimpleMatrixPlotter(object):
     """A simple helper class to fill-in subplot one after another.
 
@@ -189,7 +195,7 @@ class SimpleMatrixPlotter(object):
     >>>
     >>> smp = SimpleMatrixPlotter(gb.ngroups)
     >>> for group_name, df_group in gb:
-    >>>     ax, _ = smp_1.add(df_group.plot)
+    >>>     ax, _ = smp.add(df_group.plot)
     >>>     assert ax == _
     >>>     ax.set_title(f"Item={group_name}")
     >>> # smp.trim(); plt.show()
@@ -208,23 +214,27 @@ class SimpleMatrixPlotter(object):
         i (int): Index of the currently free subplot
     """
 
-    def __init__(
-        self, ncols: Union[str, int] = "square", init_figcount: int = 5, figsize=(6.4, 4.8), dpi=100, **kwargs
-    ):
+    def __init__(self, ncols: Optional[int] = None, init_figcount: int = 5, figsize=(6.4, 4.8), dpi=100, **kwargs):
         """Initialize a ``SimpleMatrixPlotter`` instance.
 
         Args:
-            ncols (int, optional): Number of columns. Passing "square" means to set to sqrt(init_figcount) clipped at
-                5 and 20. Defaults to "square".
+            ncols (int, optional): Number of columns. Passing None means to set to sqrt(init_figcount) clipped at
+                5 and 20. Defaults to None.
             init_figcount (int, optional): Total number of subplots. Defaults to 5.
-            figsize: size per subplot, see figsize for matplotlib. Defaults to (6.4, 4.8).
-            dpi: dot per inch, see matplotlib. Defaults to 100.
+            figsize (tuple, optional): size per subplot, see ``figsize`` for matplotlib. Defaults to (6.4, 4.8).
+            dpi (int, optional): dot per inch, see ``dpi`` in matplotlib. Defaults to 100.
+            kwargs (optional): Keyword argumetns for plt.subplots, but these are ignored and will be overriden:
+                ``ncols``, ``nrows``, ``figsize``, ``dpi``.
         """
         # Initialize subplots
-        if ncols == "square":
+        if ncols is None:
             ncols = min(max(5, int(math.sqrt(init_figcount))), 20)
         nrows = init_figcount // ncols + (init_figcount % ncols > 0)
-        self.fig, _ = plt.subplots(nrows=nrows, ncols=ncols, figsize=(figsize[0] * ncols, figsize[1] * nrows), dpi=100)
+
+        kwargs = {k: v for k, v in kwargs.items() if k not in {"nrows", "ncols", "figsize", "dpi"}}
+        self.fig, _ = plt.subplots(
+            nrows=nrows, ncols=ncols, figsize=(figsize[0] * ncols, figsize[1] * nrows), dpi=100, **kwargs
+        )
         self.axes = self.fig.axes  # Cache list of axes returned by self.fig.axes
         self.fig.subplots_adjust(hspace=0.35)
         self._i = 0  # Index of the current free subplot
@@ -236,8 +246,20 @@ class SimpleMatrixPlotter(object):
 
     @property
     def i(self):
-        """:int: Index of the current free subplot."""
+        """:int: Index of the earliest unused subplot."""
         return self._i
+
+    @property
+    def ncols(self):
+        return self.axes[0].get_geometry()[1] if len(self.axes) > 0 else 0
+
+    @property
+    def nrows(self):
+        return self.axes[0].get_geometry()[0] if len(self.axes) > 0 else 0
+
+    @property
+    def shape(self):
+        return (self.nrows, self.ncols)
 
     def add(self, plot_fun, *args, **kwargs) -> Tuple[plt.Axes, Any]:
         """Fill the current free subplot using `plot_fun()`, and set the axes and figure as the current ones.
@@ -253,8 +275,7 @@ class SimpleMatrixPlotter(object):
         return ax, retval
 
     def pop(self) -> plt.Axes:
-        """Get the next axes in this subplot, and set the it and its figure as the current axes and figure,
-        respectively.
+        """Get the next axes in this subplot, and set it and its figure as the current axes and figure, respectively.
 
         Returns:
             plt.Axes: the next axes
@@ -281,3 +302,67 @@ class SimpleMatrixPlotter(object):
         plt.close(self.fig)
         del self.fig
         self.fig = None
+
+
+# NOTE: to simplify the pager implementation, just destroy-old-and-create-new SimpleMatrixPlotter instances.
+#       Should it be clear that the overhead of this approach is not acceptable, then reset-and-reuse shall be
+#       considered.
+#
+# As of now, using pager does caps memory usage (in addition to making sure not to hit matplotlib limit of 2^16 pixels
+# per figure dimension). The following benchmark to render 10 montages at 100 subplots/montage tops at 392MB RSS, when
+# measured on MBP early 2015 model, Mojave 10.14.6, python-3.7.6.
+#
+# from mlmax.visualization.visualize import MontagePager
+# import pandas as pd
+# mp = MontagePager()
+# ser = pd.Series([0,1,2,1,3,2], name='haha')
+# for i in range(1000):
+#     ser.plot(ax=mp.pop())
+# mp.savefig()
+class MontagePager(object):
+    def __init__(
+        self,
+        path: os.PathLike = Path("."),
+        prefix: str = "montage",
+        page_size: int = 100,
+        savefig_kwargs: Dict[str, Any] = {},
+        **kwargs,
+    ):
+        """Render plots to one or more montages.
+
+        Each montage has at most ``page_size`` subplots. This pager automatically saves an existing montage when the
+        montage is full and an attempt was made to add a new subplot to it. After the exsting montage is saved, a new
+        blank montage is created, and the new subplot will be added to it. Callers are expected to explicitly save the
+        last montage.
+
+        Args:
+            prefix (str, optional): Prefix of output filenames. Defaults to "montage".
+            page_size (int, optional): Number of subplots per montage. Defaults to 100.
+            savefig_kwargs (dict, optional): Keyword arguments to SimpleMatrixPlotter.savefig(), but ``fname`` will be
+                overriden by MontagePager.
+            kwargs: Keyword arguments to instantiate each montage (i.e., SimpleMatrixPlotter.__init__()).
+        """
+        self.path = path
+        self.prefix = prefix
+        self.page_size = page_size
+        self.smp_kwargs = kwargs
+        self.smp_kwargs["init_figcount"] = page_size
+        self.savefig_kwargs = savefig_kwargs
+        self.smp = SimpleMatrixPlotter(**self.smp_kwargs)
+        self._i = 0
+
+    @property
+    def i(self):
+        """:int: Sequence number of the current montage (zero-based)."""
+        return self._i
+
+    def pop(self, **kwargs):
+        if self.smp.i >= self.page_size:
+            self.savefig()
+            self.smp = SimpleMatrixPlotter(**self.smp_kwargs)
+            self._i += 1
+        return self.smp.pop()
+
+    def savefig(self):
+        # No need to check for empty montage, because Figure.savefig() won't generate output file in such cases.
+        self.smp.savefig(self.path / f"{self.prefix}-{self._i:04d}.png", **self.savefig_kwargs)

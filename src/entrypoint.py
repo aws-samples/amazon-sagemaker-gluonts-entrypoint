@@ -144,10 +144,7 @@ def train(args, algo_args):
 
     # Compute standard metrics over all samples or quantiles, and plot each timeseries, all in one go!
     evaluator = MyEvaluator(
-        out_dir=Path(args.output_data_dir),
-        ts_count=len(dataset.test),
-        quantiles=args.quantiles,
-        plot_transparent=args.plot_transparent,
+        out_dir=Path(args.output_data_dir), quantiles=args.quantiles, plot_transparent=bool(args.plot_transparent),
     )
     agg_metrics, item_metrics = evaluator(ts_it, forecast_it, num_series=len(dataset.test))
 
