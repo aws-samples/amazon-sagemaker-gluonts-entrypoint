@@ -126,7 +126,7 @@ def train(args, algo_args):
 
     # Train
     logger.info("Starting model training.")
-    predictor = estimator.train(dataset.train)
+    predictor = estimator.train(training_data=dataset.train, validation_data=dataset.test)
     # Save
     model_dir = mkdir(args.model_dir)
     predictor.serialize(model_dir)
