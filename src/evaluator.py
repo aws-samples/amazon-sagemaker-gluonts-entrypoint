@@ -119,7 +119,7 @@ class MyEvaluator(Evaluator):
         MyEvaluator.plot2(forecast, prediction_intervals=intervals, show_mean=True)
         plt.grid(which="both")
         plt.legend(loc="upper left")
-        plt.gca().set_title(forecast.item_id.replace("|", "\n"))
+        plt.gca().set_title(str(forecast.item_id).replace("|", "\n"))
 
     @staticmethod
     def plot2(
