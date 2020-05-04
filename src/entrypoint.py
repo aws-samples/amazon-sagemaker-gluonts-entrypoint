@@ -7,9 +7,12 @@ import os
 import sys
 import warnings
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Union
 
 import matplotlib.cbook
+from gluonts.dataset.common import DataEntry
+from gluonts.model.forecast import Config, Forecast
+from gluonts.model.predictor import Predictor
 
 warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
 
@@ -208,6 +211,72 @@ def infer_dtype(s):
         return json.loads(s)
     except:  # noqa:E722
         return s
+
+
+def model_fn(model_dir: Union[str, Path]) -> Predictor:
+    """Load a glounts model from a directory.
+
+    Args:
+        model_dir (Union[str, Path]): a directory where model is saved.
+
+    Returns:
+        Predictor: A gluonts predictor.
+    """
+    predictor = Predictor.deserialize(Path(model_dir))
+    logger.info("model_fn() done; loaded predictor %s", predictor)
+    return predictor
+
+
+def input_fn(request_body: str, request_content_type: str = "") -> List[DataEntry]:
+    """Deserialize JSON-lines into Python objects.
+
+    Args:
+        request_body (str): Incoming payload.
+        request_content_type (str, optional): Ignored. Defaults to "".
+
+    Returns:
+        List[DataEntry]: List of gluonts timeseries.
+    """
+    import io
+    import json
+
+    return [json.loads(line) for line in io.StringIO(request_body)]
+
+
+def predict_fn(input_object: List[DataEntry], model: Predictor, num_samples=1000) -> List[Forecast]:
+    """Take the deserialized JSON-lines, then perform inference against the loaded model.
+
+    Args:
+        input_object (List[DataEntry]): List of gluonts timeseries.
+        model (Predictor): A gluonts predictor.
+        num_samples (int, optional): Number of forecast paths for each timeseries. Defaults to 1000.
+
+    Returns:
+        List[Forecast]: List of forecast results.
+    """
+    from gluonts.dataset.common import ListDataset
+
+    # Create ListDataset here, because we need to match their freq with model's freq.
+    X = ListDataset(input_object, freq=model.freq)
+    it = model.predict(X, num_samples=num_samples)
+    return list(it)
+
+
+def output_fn(
+    forecasts: List[Forecast],
+    content_type: str = "",
+    config: Config = Config(quantiles=["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9"]),
+) -> str:
+    """Take the prediction result and serializes it according to the response content type.
+
+    Args:
+        prediction (List[Forecast]): List of forecast results.
+        content_type (str, optional): Ignored. Defaults to "".
+
+    Returns:
+        List[str]: List of JSON-lines, each denotes forecast results in quantiles.
+    """
+    return "\n".join((json.dumps(forecast.as_json_dict(config)) for forecast in forecasts))
 
 
 if __name__ == "__main__":
