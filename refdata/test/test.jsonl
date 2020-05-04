@@ -1,2 +1,2 @@
-{"start": "2019-09-29 00:00:00", "target": [128, 57, 0, 29, 10, 64], "feat_static_cat": [0], "item_id": "ts1|ABCD"}
-{"start": "2019-10-01 00:00:00", "target": [256, 125, 150, 127, 20, 205], "feat_static_cat": [1], "item_id": "ts2|EFGH"}
+{"start": "2019-09-29 00:00:00", "target": [128, 57, 0, 29, 10, 64], "feat_static_cat": [0], "item_id": "cat:ts1|name:ABCD"}
+{"start": "2019-10-01 00:00:00", "target": [256, 125, 150, 127, 20, 205], "feat_static_cat": [1], "item_id": "cat:ts2|name:EFGH"}
