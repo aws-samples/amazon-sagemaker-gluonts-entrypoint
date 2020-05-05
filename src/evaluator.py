@@ -3,7 +3,7 @@ import math
 import os
 import warnings
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -29,12 +29,23 @@ plt.rcParams.update({
 
 class MyEvaluator(Evaluator):
     # NOTE: we must not write anything to stdout or stderr, otherwise will intermingle with tqdm progress bar!!!
-    def __init__(self, out_dir: os.PathLike, *args, plot_transparent: bool = False, **kwargs):
+    def __init__(
+        self,
+        out_dir: os.PathLike,
+        *args,
+        plot_transparent: bool = False,
+        gt_inverse_transform: Optional[Callable] = None,
+        clip_at_zero: bool = True,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.out_dir = mkdir(out_dir)
         self.out_fname = self.out_dir / "results.jsonl"
         self.plot_dir = mkdir(self.out_dir / "plots")
         self.plot_single_dir = mkdir(self.plot_dir / "single")
+
+        self.gt_inverse_transform = gt_inverse_transform
+        self.clip_at_zero = clip_at_zero
 
         # Plot configurations
         self.plot_ci = [50.0, 90.0]
@@ -52,6 +63,12 @@ class MyEvaluator(Evaluator):
     def get_metrics_per_ts(
         self, time_series: Union[pd.Series, pd.DataFrame], forecast: Forecast
     ) -> Dict[str, Union[float, str, None]]:
+        # Inverse tranformation (if any), then clip to 0.
+        if self.gt_inverse_transform is not None:
+            time_series = self.gt_inverse_transform(time_series)
+        if self.clip_at_zero:
+            time_series = time_series.clip(lower=0.0)
+
         # Compute the built-in metrics
         metrics = super().get_metrics_per_ts(time_series, forecast)
 

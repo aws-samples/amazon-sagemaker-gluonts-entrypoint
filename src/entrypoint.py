@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Union
 
 import matplotlib.cbook
-from gluonts.dataset.common import DataEntry
+import numpy as np
+from gluonts.dataset.common import DataEntry, ListDataset, TrainDatasets
 from gluonts.model.forecast import Config, Forecast
 from gluonts.model.predictor import Predictor
 
@@ -101,6 +102,46 @@ def print_logging_setup(logger):
 
 
 print_logging_setup(logger)
+# logger.setLevel(logging.DEBUG)
+
+
+def log1p_tds(dataset: TrainDatasets) -> TrainDatasets:
+    """Create a new train datasets with targets log-transformed."""
+    # Implementation note: currently, the only way is to eagerly load all timeseries in memory, and do the transform.
+    train = ListDataset(dataset.train, freq=dataset.metadata.freq)
+    log1p(train)
+
+    if dataset.test is not None:
+        test = ListDataset(dataset.test, freq=dataset.metadata.freq)
+        log1p(test)
+    else:
+        test = None
+
+    # fmt: off
+    return TrainDatasets(
+        dataset.metadata.copy(),  # Note: pydantic's deep copy.
+        train=train,
+        test=test
+    )
+    # fmt: on
+
+
+def log1p(ds: ListDataset):
+    """In-place log transformation."""
+    for data_entry in ds:
+        data_entry["target"] = np.log1p(data_entry["target"])
+
+
+def expm1_and_clip_to_zero(_, yhat: np.ndarray):
+    """Expm1, followed by clip at 0.0."""
+    logger.debug("Before expm1: %s %s", yhat.shape, yhat)
+    logger.debug("After expm1: %s %s", yhat.shape, np.expm1(yhat))
+
+    return np.clip(np.expm1(yhat), a_min=0.0, a_max=None)
+
+
+def clip_to_zero(_, yhat: np.ndarray):
+    return np.clip(yhat, a_min=0.0, a_max=None)
 
 
 def train(args, algo_args):
@@ -117,6 +158,9 @@ def train(args, algo_args):
         dataset = load_datasets(
             metadata=s3_dataset_dir / "metadata", train=s3_dataset_dir / "train", test=s3_dataset_dir / "test",
         )
+        # Apply transformation if requested
+        if args.y_transform == "log1p":
+            dataset = log1p_tds(dataset)
 
     # Initialize estimator
     estimator = hp2estimator(args.algo, algo_args, dataset.metadata)
@@ -133,6 +177,14 @@ def train(args, algo_args):
     # Save
     model_dir = mkdir(args.model_dir)
     predictor.serialize(model_dir)
+    # Also record the y's transformation & inverse transformation.
+    with open(os.path.join(args.model_dir, "y_transform.json"), "w") as f:
+        if args.y_transform == "log1p":
+            f.write('{"transform": "log1p", "inverse_transform": "expm1"}\n')
+            predictor.output_transform = expm1_and_clip_to_zero
+        else:
+            f.write('{"transform": "noop", "inverse_transform": "clip_at_zero"}\n')
+            predictor.output_transform = clip_to_zero
 
     # Debug/dev/test milestone
     if args.stop_before == "eval":
@@ -146,8 +198,15 @@ def train(args, algo_args):
     )
 
     # Compute standard metrics over all samples or quantiles, and plot each timeseries, all in one go!
+    # Remember to specify gt_inverse_transform when computing metrics.
+    logger.info("MyEvaluator: assume non-negative ground truths, hence no clip_to_zero performed on them.")
+    gt_inverse_transform = np.expm1 if args.y_transform == "log1p" else None
     evaluator = MyEvaluator(
-        out_dir=Path(args.output_data_dir), quantiles=args.quantiles, plot_transparent=bool(args.plot_transparent),
+        out_dir=Path(args.output_data_dir),
+        quantiles=args.quantiles,
+        plot_transparent=bool(args.plot_transparent),
+        gt_inverse_transform=gt_inverse_transform,
+        clip_at_zero=True,
     )
     agg_metrics, item_metrics = evaluator(ts_it, forecast_it, num_series=len(dataset.test))
 
@@ -223,7 +282,24 @@ def model_fn(model_dir: Union[str, Path]) -> Predictor:
         Predictor: A gluonts predictor.
     """
     predictor = Predictor.deserialize(Path(model_dir))
+
+    # If model was trained on log-space, then forecast must be inverted before metrics etc.
+    with open(os.path.join(model_dir, "y_transform.json"), "r") as f:
+        y_transform = json.load(f)
+        logger.info("model_fn: custom transformations = %s", y_transform)
+
+        if y_transform["inverse_transform"] == "expm1":
+            predictor.output_transform = expm1_and_clip_to_zero
+        else:
+            predictor.output_transform = clip_to_zero
+
+        # Custom field
+        predictor.pre_input_transform = log1p if y_transform["transform"] == "log1p" else None
+
+    logger.info("predictor.pre_input_transform: %s", predictor.pre_input_transform)
+    logger.info("predictor.output_transform: %s", predictor.output_transform)
     logger.info("model_fn() done; loaded predictor %s", predictor)
+
     return predictor
 
 
@@ -258,6 +334,13 @@ def predict_fn(input_object: List[DataEntry], model: Predictor, num_samples=1000
 
     # Create ListDataset here, because we need to match their freq with model's freq.
     X = ListDataset(input_object, freq=model.freq)
+
+    # Apply forward transformation to input data, before injecting it to the predictor.
+    if model.pre_input_transform is not None:
+        logger.debug("Before model.pre_input_transform: %s", X.list_data)
+        model.pre_input_transform(X)
+        logger.debug("After model.pre_input_transform: %s", X.list_data)
+
     it = model.predict(X, num_samples=num_samples)
     return list(it)
 
@@ -292,13 +375,14 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, default=os.environ.get("SM_HP_DATASET", ""))
 
     # Arguments for evaluators
-    parser.add_argument("--num_samples", type=int, default=os.environ.get("SM_HP_NUM_SAMPLES", 100))
+    parser.add_argument("--num_samples", type=int, default=os.environ.get("SM_HP_NUM_SAMPLES", 1000))
     parser.add_argument(
         "--quantiles", default=os.environ.get("SM_HP_QUANTILES", [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
     )
     parser.add_argument(
         "--algo", type=str, default=os.environ.get("SM_HP_ALGO", "gluonts.model.deepar.DeepAREstimator")
     )
+    parser.add_argument("--y_transform", type=str, default="noop", choices=["noop", "log1p"])
 
     # Argumets for plots
     parser.add_argument("--plot_transparent", type=int, default=os.environ.get("SM_HP_PLOT_TRANSPARENT", 0))
