@@ -18,29 +18,20 @@ def predictor():
 
 
 @pytest.fixture
-def input_ts():
-    request_body = """{"start": "2019-09-29", "target": [128, 57, 0, 29, 10, 64], "feat_static_cat": [0], "item_id": "cat:ts1|name:AB"}
+def request_body():
+    return b"""{"start": "2019-09-29", "target": [128, 57, 0, 29, 10, 64], "feat_static_cat": [0], "item_id": "cat:ts1|name:AB"}
 {"start": "2019-10-01", "target": [256, 125, 150, 127, 20, 205], "feat_static_cat": [1], "item_id": "cat:ts2|name:EF"}
 """
-    ts = entrypoint.input_fn(request_body, "request_content_type_ignored_by_input_fn")
-    expected = [json.loads(line) for line in io.StringIO(request_body)]
-    assert ts == expected
-    return ts
 
 
 @pytest.mark.parametrize("num_samples,quantiles", [(5, ["0.4", "0.6"]), (25, ["0.2", "0.5", "0.8"])])
-def test_inference(predictor: Predictor, input_ts: List[DataEntry], num_samples: int, quantiles: List[str]):
-    # Somewhat equivalent to predictor.predict(input_ts).
-    results = entrypoint.predict_fn(input_ts, predictor, num_samples=num_samples)
-
-    # Verify forecast paths.
-    for result in results:
-        assert result.samples.shape == (num_samples, predictor.prediction_length)
-
-    # Serialize forecast results to JSON lines
-    results_str = entrypoint.output_fn(results, Config(quantiles=quantiles))
+def test_transform_fn(predictor: Predictor, request_body: bytes, num_samples: int, quantiles: List[str]):
+    results_bytes, accept_type = entrypoint.transform_fn(
+        predictor, request_body, "application/json", "application/json", 3
+    )
 
     # Make sure each JSON line is somewhat correct.
+    results_str = results_bytes.decode("utf-8")
     for line in io.StringIO(results_str):
         d = json.loads(line)
         for quantile in quantiles:
@@ -51,3 +42,14 @@ def test_inference(predictor: Predictor, input_ts: List[DataEntry], num_samples:
     # Print results; need to run pytest -v -rA --tb=short ...
     print(results_str)
     return results_str
+
+
+@pytest.mark.parametrize("num_samples,quantiles", [(5, ["0.4", "0.6"]), (25, ["0.2", "0.5", "0.8"])])
+def test_predict_fn(predictor: Predictor, request_body: bytes, num_samples: int, quantiles: List[str]):
+    input_ts = entrypoint._input_fn(request_body, "application/json")
+    results = entrypoint._predict_fn(input_ts, predictor, num_samples=num_samples)
+
+    # Verify forecast paths.
+    for result in results:
+        assert result.samples.shape == (num_samples, predictor.prediction_length)
+        print(result.samples.shape)

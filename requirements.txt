@@ -1,2 +1,2 @@
-gluonts==0.4.2
-pydantic<1.5.*
+gluonts==0.4.3
+matplotlib

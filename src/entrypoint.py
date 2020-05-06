@@ -1,13 +1,14 @@
 # Based on glounts/nursery/sagemaker_sdk/entrypoint_scripts/train_entry_point.py
 # TODO: implement model_fn, input_fn, predict_fn, and output_fn !!
 import argparse
+import io
 import json
 import logging
 import os
 import sys
 import warnings
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import matplotlib.cbook
 import numpy as np
@@ -303,7 +304,32 @@ def model_fn(model_dir: Union[str, Path]) -> Predictor:
     return predictor
 
 
-def input_fn(request_body: str, request_content_type: str = "") -> List[DataEntry]:
+def transform_fn(
+    model: Predictor,
+    request_body: bytes,
+    content_type: str = "application/json",
+    accept_type: str = "application/json",
+    num_samples: int = 1000,
+) -> Union[bytes, Tuple[bytes, str]]:
+    # See https://sagemaker.readthedocs.io/en/stable/using_mxnet.html#use-transform-fn
+    #
+    # [As of this writing on 20200506]s
+    # Looking at sagemaker_mxnet_serving_container/handler_service.py [1], it turns out I must use transform_fn()
+    # because my gluonts predictor is neither mx.module.BaseModule nor mx.gluon.block.Block.
+    #
+    # I suppose the model_fn documentation [2] can be updated also, to make it clear that if entrypoint does not use
+    # transform_fn(), then model_fn() must returns object with similar type to what the default implementation does.
+    #
+    # [1] https://github.com/aws/sagemaker-mxnet-serving-container/blob/406c1f387d9800ed264b538bdbf9a30de68b6977/src/sagemaker_mxnet_serving_container/handler_service.py
+    # [2] https://sagemaker.readthedocs.io/en/stable/using_mxnet.html#load-a-model
+    deser_input: List[DataEntry] = _input_fn(request_body, content_type)
+    fcast: List[Forecast] = _predict_fn(deser_input, model, num_samples=3)
+    ser_output: Union[bytes, Tuple[bytes, str]] = _output_fn(fcast, accept_type)
+    return ser_output
+
+
+# Because we use transform_fn(), make sure this entrypoint does not contain input_fn() during inference.
+def _input_fn(request_body: bytes, request_content_type: str = "application/json") -> List[DataEntry]:
     """Deserialize JSON-lines into Python objects.
 
     Args:
@@ -313,13 +339,11 @@ def input_fn(request_body: str, request_content_type: str = "") -> List[DataEntr
     Returns:
         List[DataEntry]: List of gluonts timeseries.
     """
-    import io
-    import json
-
-    return [json.loads(line) for line in io.StringIO(request_body)]
+    return [json.loads(line) for line in io.StringIO(request_body.decode("utf-8"))]
 
 
-def predict_fn(input_object: List[DataEntry], model: Predictor, num_samples=1000) -> List[Forecast]:
+# Because we use transform_fn(), make sure this entrypoint does not contain predict_fn() during inference.
+def _predict_fn(input_object: List[DataEntry], model: Predictor, num_samples=1000) -> List[Forecast]:
     """Take the deserialized JSON-lines, then perform inference against the loaded model.
 
     Args:
@@ -330,8 +354,6 @@ def predict_fn(input_object: List[DataEntry], model: Predictor, num_samples=1000
     Returns:
         List[Forecast]: List of forecast results.
     """
-    from gluonts.dataset.common import ListDataset
-
     # Create ListDataset here, because we need to match their freq with model's freq.
     X = ListDataset(input_object, freq=model.freq)
 
@@ -345,11 +367,12 @@ def predict_fn(input_object: List[DataEntry], model: Predictor, num_samples=1000
     return list(it)
 
 
-def output_fn(
+# Because we use transform_fn(), make sure this entrypoint does not contain output_fn() during inference.
+def _output_fn(
     forecasts: List[Forecast],
-    content_type: str = "",
+    content_type: str = "application/json",
     config: Config = Config(quantiles=["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9"]),
-) -> str:
+) -> Union[bytes, Tuple[bytes, str]]:
     """Take the prediction result and serializes it according to the response content type.
 
     Args:
@@ -359,7 +382,9 @@ def output_fn(
     Returns:
         List[str]: List of JSON-lines, each denotes forecast results in quantiles.
     """
-    return "\n".join((json.dumps(forecast.as_json_dict(config)) for forecast in forecasts))
+    str_results = "\n".join((json.dumps(forecast.as_json_dict(config)) for forecast in forecasts))
+    bytes_results = str.encode(str_results)
+    return bytes_results, content_type
 
 
 if __name__ == "__main__":
