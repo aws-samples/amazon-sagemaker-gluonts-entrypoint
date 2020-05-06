@@ -132,8 +132,7 @@ class MyEvaluator(Evaluator):
     def plot_prob_forecasts(ax, time_series, forecast, intervals, past_length=8):
         plot_length = past_length + forecast.prediction_length
         time_series[0][-plot_length:].plot(ax=ax, label="actual")
-        # forecast.plot(prediction_intervals=intervals, color="g", show_mean=True)
-        MyEvaluator.plot2(forecast, prediction_intervals=intervals, show_mean=True)
+        MyEvaluator.plot2(forecast, prediction_intervals=intervals, show_mean=False)
         plt.grid(which="both")
         plt.legend(loc="upper left")
         plt.gca().set_title(str(forecast.item_id).replace("|", "\n"))
