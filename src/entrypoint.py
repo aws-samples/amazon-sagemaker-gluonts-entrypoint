@@ -1,6 +1,5 @@
-# Based on glounts/nursery/sagemaker_sdk/entrypoint_scripts/train_entry_point.py
-# TODO: implement model_fn, input_fn, predict_fn, and output_fn !!
 import argparse
+import inspect
 import io
 import json
 import logging
@@ -172,9 +171,20 @@ def train(args, algo_args):
         logger.info("Early termination: before %s", args.stop_before)
         return
 
+    # Probe the right kwarg for validation data.
+    # - NPTSEstimator (or any based on DummyEstimator) uses validation_dataset=...
+    # - Other estimators use validation_data=...
+    candidate_kwarg = [k for k in inspect.signature(estimator.train).parameters if "validation_data" in k]
+    kwargs = {"training_data": dataset.train}
+    if len(candidate_kwarg) == 1:
+        kwargs[candidate_kwarg[0]] = dataset.test
+    else:
+        kwargs["validation_data"] = dataset.test
+
     # Train
     logger.info("Starting model training.")
-    predictor = estimator.train(training_data=dataset.train, validation_data=dataset.test)
+    # predictor = estimator.train(training_data=dataset.train, validation_data=dataset.test)
+    predictor = estimator.train(**kwargs)
     # Save
     model_dir = mkdir(args.model_dir)
     predictor.serialize(model_dir)
