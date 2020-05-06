@@ -323,7 +323,7 @@ def transform_fn(
     # [1] https://github.com/aws/sagemaker-mxnet-serving-container/blob/406c1f387d9800ed264b538bdbf9a30de68b6977/src/sagemaker_mxnet_serving_container/handler_service.py
     # [2] https://sagemaker.readthedocs.io/en/stable/using_mxnet.html#load-a-model
     deser_input: List[DataEntry] = _input_fn(request_body, content_type)
-    fcast: List[Forecast] = _predict_fn(deser_input, model, num_samples=3)
+    fcast: List[Forecast] = _predict_fn(deser_input, model, num_samples=num_samples)
     ser_output: Union[bytes, Tuple[bytes, str]] = _output_fn(fcast, accept_type)
     return ser_output
 
