@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Tuple, Union
 
 import matplotlib.cbook
 import numpy as np
-
 from gluonts.dataset.common import DataEntry, ListDataset, TrainDatasets
 from gluonts.model.forecast import Config, Forecast
 from gluonts.model.predictor import Predictor
@@ -397,7 +396,33 @@ def _output_fn(
     Returns:
         List[str]: List of JSON-lines, each denotes forecast results in quantiles.
     """
-    str_results = "\n".join((json.dumps(forecast.as_json_dict(config)) for forecast in forecasts))
+
+    # jsonify_floats is taken from gluonts/shell/serve/util.py
+    #
+    # The module depends on flask, and we may not want to import when testing in our own dev env.
+    def jsonify_floats(json_object):
+        """Traverse through the JSON object and converts non JSON-spec compliant floats(nan, -inf, inf) to string.
+
+        Parameters
+        ----------
+        json_object
+            JSON object
+        """
+        if isinstance(json_object, dict):
+            return {k: jsonify_floats(v) for k, v in json_object.items()}
+        elif isinstance(json_object, list):
+            return [jsonify_floats(item) for item in json_object]
+        elif isinstance(json_object, float):
+            if np.isnan(json_object):
+                return "NaN"
+            elif np.isposinf(json_object):
+                return "Infinity"
+            elif np.isneginf(json_object):
+                return "-Infinity"
+            return json_object
+        return json_object
+
+    str_results = "\n".join((json.dumps(jsonify_floats(forecast.as_json_dict(config))) for forecast in forecasts))
     bytes_results = str.encode(str_results)
     return bytes_results, content_type
 
