@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Tuple, Union
 
 import matplotlib.cbook
 import numpy as np
+
 from gluonts.dataset.common import DataEntry, ListDataset, TrainDatasets
 from gluonts.model.forecast import Config, Forecast
 from gluonts.model.predictor import Predictor
@@ -316,14 +317,14 @@ def model_fn(model_dir: Union[str, Path]) -> Predictor:
 
 def transform_fn(
     model: Predictor,
-    request_body: bytes,
+    request_body: Union[str, bytes],
     content_type: str = "application/json",
     accept_type: str = "application/json",
     num_samples: int = 1000,
 ) -> Union[bytes, Tuple[bytes, str]]:
     # See https://sagemaker.readthedocs.io/en/stable/using_mxnet.html#use-transform-fn
     #
-    # [As of this writing on 20200506]s
+    # [As of this writing on 20200506]
     # Looking at sagemaker_mxnet_serving_container/handler_service.py [1], it turns out I must use transform_fn()
     # because my gluonts predictor is neither mx.module.BaseModule nor mx.gluon.block.Block.
     #
@@ -339,7 +340,7 @@ def transform_fn(
 
 
 # Because we use transform_fn(), make sure this entrypoint does not contain input_fn() during inference.
-def _input_fn(request_body: bytes, request_content_type: str = "application/json") -> List[DataEntry]:
+def _input_fn(request_body: Union[str, bytes], request_content_type: str = "application/json") -> List[DataEntry]:
     """Deserialize JSON-lines into Python objects.
 
     Args:
@@ -349,7 +350,11 @@ def _input_fn(request_body: bytes, request_content_type: str = "application/json
     Returns:
         List[DataEntry]: List of gluonts timeseries.
     """
-    return [json.loads(line) for line in io.StringIO(request_body.decode("utf-8"))]
+
+    # [20200508] I swear: two days ago request_body was bytes, today's string!!!
+    if isinstance(request_body, bytes):
+        request_body = request_body.decode("utf-8")
+    return [json.loads(line) for line in io.StringIO(request_body)]
 
 
 # Because we use transform_fn(), make sure this entrypoint does not contain predict_fn() during inference.
