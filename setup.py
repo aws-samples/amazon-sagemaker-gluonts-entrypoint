@@ -1,7 +1,8 @@
 import os
+
 from setuptools import find_packages, setup
 
-_pkg: str = "python_project_skeleton"
+_pkg: str = "gluonts-examples"
 
 
 def read(fname):
