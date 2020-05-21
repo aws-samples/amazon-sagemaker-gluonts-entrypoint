@@ -14,6 +14,8 @@ import numpy as np
 from gluonts.dataset.common import DataEntry, ListDataset, TrainDatasets
 from gluonts.model.forecast import Config, Forecast
 from gluonts.model.predictor import Predictor
+from pandas.tseries import offsets
+from pandas.tseries.frequencies import to_offset
 
 warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
 
@@ -231,6 +233,32 @@ def train(args, algo_args):
         json.dump(agg_metrics, f)
     with open(metrics_output_dir / "item_metrics.csv", "w") as f:
         item_metrics.to_csv(f, index=False)
+
+    # Specific requirement: output wmape to a separate file.
+
+    with open(metrics_output_dir / f"{freq_name(dataset.metadata.freq)}-wmapes.csv", "w") as f:
+        warnings.warn(
+            "wmape csv uses daily or weekly according to frequency string, "
+            "hence 7D still results in daily rather than weekly."
+        )
+        wmape_metrics = item_metrics[["item_id", "wMAPE"]].rename(
+            {"item_id": "category", "wMAPE": "test_wMAPE"}, axis=1
+        )
+        wmape_metrics.to_csv(f, index=False)
+
+
+def freq_name(s):
+    """Convert frequency string to friendly name.
+
+    This implementation uses only frequency string, hence 7D still becomes daily. It's not smart enough yet to know
+    that 7D equals to week.
+    """
+    offset = to_offset(s)
+    if isinstance(offset, offsets.Day):
+        return "daily"
+    elif isinstance(offset, offsets.Week):
+        return "weekly"
+    raise ValueError(f"Unsupported frequency: {s}")
 
 
 def parse_hyperparameters(hm) -> Dict[str, Any]:
