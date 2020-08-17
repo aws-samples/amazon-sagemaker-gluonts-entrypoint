@@ -10,8 +10,9 @@ import numpy as np
 import pandas as pd
 from gluonts.evaluation import Evaluator
 from gluonts.model.forecast import Config, Forecast
-from metrics import wmape
-from sm_util import mkdir
+
+from .metrics import wmape
+from .util import mkdir
 
 output_configuration = Config(quantiles=["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9"])
 # fmt: off
