@@ -1,0 +1,36 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "train",
+      "type": "python",
+      "request": "launch",
+      "program": "src/train.py",
+      "console": "integratedTerminal",
+      "argsExpansion": "none",
+      "args": [
+        "--s3_dataset",
+        "refdata",
+        "--y_transform",
+        "log1p",
+        "--algo",
+        "gluonts.model.deepar.DeepAREstimator",
+        "--trainer.__class__",
+        "gluonts.trainer.Trainer",
+        "--trainer.epochs",
+        "10",
+        "--distr_output.__class__",
+        "gluonts.distribution.gaussian.GaussianOutput",
+        "--use_feat_static_cat",
+        "True",
+        "--cardinality",
+        "[5]",
+        "--prediction_length",
+        "3"
+      ]
+    }
+  ]
+}
