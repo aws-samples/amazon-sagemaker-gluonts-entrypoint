@@ -5,6 +5,8 @@ from typing import Any, Dict, Union
 
 import numpy as np
 from gluonts.dataset.common import ListDataset, MetaData, TrainDatasets
+from pandas.tseries import offsets
+from pandas.tseries.frequencies import to_offset
 
 
 def mkdir(path: Union[str, os.PathLike]):
@@ -37,6 +39,20 @@ def override_hp(hp: Dict[str, Any], metadata: MetaData) -> Dict[str, Any]:
         )
 
     return hp
+
+
+def freq_name(s):
+    """Convert frequency string to friendly name.
+
+    This implementation uses only frequency string, hence 7D still becomes daily. It's not smart enough yet to know
+    that 7D equals to week.
+    """
+    offset = to_offset(s)
+    if isinstance(offset, offsets.Day):
+        return "daily"
+    elif isinstance(offset, offsets.Week):
+        return "weekly"
+    raise ValueError(f"Unsupported frequency: {s}")
 
 
 ################################################################################

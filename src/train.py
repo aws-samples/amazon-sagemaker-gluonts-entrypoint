@@ -15,16 +15,19 @@ import numpy as np
 from gluonts.dataset.common import TrainDatasets, load_datasets
 from gluonts.dataset.repository import datasets
 from gluonts.evaluation import backtest
-from pandas.tseries import offsets
-from pandas.tseries.frequencies import to_offset
 
 from gluonts_example.evaluator import MyEvaluator
-from gluonts_example.util import clip_to_zero, expm1_and_clip_to_zero, log1p_tds, mkdir, override_hp
+from gluonts_example.util import clip_to_zero, expm1_and_clip_to_zero, freq_name, log1p_tds, mkdir, override_hp
 
 warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
 
 # Setup logger must be done in the entrypoint script.
 logger = smepu.setup_opinionated_logger(__name__)
+
+INVERSE = {
+    "log1p": expm1_and_clip_to_zero,
+    "noop": clip_to_zero,
+}
 
 
 def train(args: Namespace, algo_args: Dict[str, Any]) -> None:
@@ -38,33 +41,14 @@ def train(args: Namespace, algo_args: Dict[str, Any]) -> None:
         logger.info("Early termination: before %s", args.stop_before)
         return
 
-    # Probe the right kwarg for validation data.
-    # - NPTSEstimator (or any based on DummyEstimator) uses validation_dataset=...
-    # - Other estimators use validation_data=...
-    candidate_kwarg = [k for k in inspect.signature(estimator.train).parameters if "validation_data" in k]
-    kwargs = {"training_data": dataset.train}
-    if len(candidate_kwarg) == 1:
-        kwargs[candidate_kwarg[0]] = dataset.test
-    else:
-        kwargs["validation_data"] = dataset.test
-
-    # Train
+    # Train & save model
     logger.info("Starting model training.")
     if args.y_transform == "log1p":
         dataset = log1p_tds(dataset)
-    # predictor = estimator.train(training_data=dataset.train, validation_data=dataset.test)
-    predictor = estimator.train(**kwargs)
-    # Save
-    model_dir = mkdir(args.model_dir)
-    predictor.serialize(model_dir)
-    # Also record the y's transformation & inverse transformation.
-    with open(os.path.join(args.model_dir, "y_transform.json"), "w") as f:
-        if args.y_transform == "log1p":
-            f.write('{"transform": "log1p", "inverse_transform": "expm1"}\n')
-            predictor.output_transform = expm1_and_clip_to_zero
-        else:
-            f.write('{"transform": "noop", "inverse_transform": "clip_at_zero"}\n')
-            predictor.output_transform = clip_to_zero
+    train_kwargs = get_train_kwargs(estimator, dataset)
+    predictor = estimator.train(**train_kwargs)
+    predictor.output_transform = INVERSE[args.y_transform]
+    save_model(predictor, args)
 
     # Debug/dev/test milestone
     if args.stop_before == "eval":
@@ -137,18 +121,28 @@ def new_estimator(algo: str, kwargs) -> Any:
     return estimator
 
 
-def freq_name(s):
-    """Convert frequency string to friendly name.
+def get_train_kwargs(estimator, dataset) -> Dict[str, Any]:
+    """Probe the right validation-data kwarg for the estimator.
 
-    This implementation uses only frequency string, hence 7D still becomes daily. It's not smart enough yet to know
-    that 7D equals to week.
+    Known cases :
+
+    - NPTSEstimator (or any other based on DummyEstimator) uses validation_dataset=...
+    - Other estimators use validation_data=...
     """
-    offset = to_offset(s)
-    if isinstance(offset, offsets.Day):
-        return "daily"
-    elif isinstance(offset, offsets.Week):
-        return "weekly"
-    raise ValueError(f"Unsupported frequency: {s}")
+    candidate_kwarg = [k for k in inspect.signature(estimator.train).parameters if "validation_data" in k]
+    kwargs = {"training_data": dataset.train}
+    if len(candidate_kwarg) == 1:
+        kwargs[candidate_kwarg[0]] = dataset.test
+    else:
+        kwargs["validation_data"] = dataset.test
+    return kwargs
+
+
+def save_model(predictor, args: Namespace):
+    predictor.serialize(mkdir(args.model_dir))
+    with open(os.path.join(args.model_dir, "y_transform.json"), "w") as f:
+        inverse = INVERSE[args.y_transform]
+        f.write('{"transform": "%s", "inverse_transform": "%s"}\n' % (args.y_transform, inverse.__name__))
 
 
 def add_args(parser: ArgumentParser):
