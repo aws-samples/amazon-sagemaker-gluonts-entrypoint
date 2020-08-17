@@ -55,9 +55,6 @@ class MyEvaluator(Evaluator):
             self.out_dir / "plots", page_size=100, savefig_kwargs={"transparent": self.plot_transparent}
         )
 
-        # A running counter for individual image files.
-        self.i = 0
-
         self.out_f = self.out_fname.open("w")
 
     def get_metrics_per_ts(
@@ -89,7 +86,6 @@ class MyEvaluator(Evaluator):
 
         # Add to montage
         self.plot_prob_forecasts(self.mp.pop(forecast.item_id), time_series, forecast, self.plot_ci)
-        self.i += 1  # TODO: should we reset this in __call__()?
 
         return metrics
 
