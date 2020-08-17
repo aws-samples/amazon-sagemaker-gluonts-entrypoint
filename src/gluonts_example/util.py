@@ -83,7 +83,7 @@ def log1p_tds(dataset: TrainDatasets) -> TrainDatasets:
 
 def log1p(ds: ListDataset):
     """In-place log transformation."""
-    for data_entry in ds:
+    for data_entry in ds.list_data:
         data_entry["target"] = np.log1p(data_entry["target"])
 
 
