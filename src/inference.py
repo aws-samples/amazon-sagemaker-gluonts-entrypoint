@@ -52,6 +52,18 @@ def model_fn(model_dir: Union[str, Path]) -> Predictor:
     return predictor
 
 
+# See https://sagemaker.readthedocs.io/en/stable/using_mxnet.html#use-transform-fn
+#
+# [As of this writing on 20200506]
+# Looking at sagemaker_mxnet_serving_container/handler_service.py [1], it turns out I must use transform_fn()
+# because my gluonts predictor is neither mx.module.BaseModule nor mx.gluon.block.Block.
+#
+# I suppose the model_fn documentation [2] can be updated also, to make it clear that if entrypoint does not use
+# transform_fn(), then model_fn() must returns object with similar type to what the default implementation does.
+#
+# [1] https://github.com/aws/sagemaker-mxnet-serving-container/blob/406c1f387d9800ed264b538bdbf9a30de68b6977 \
+#     /src/sagemaker_mxnet_serving_container/handler_service.py
+# [2] https://sagemaker.readthedocs.io/en/stable/using_mxnet.html#load-a-model
 def transform_fn(
     model: Predictor,
     request_body: Union[str, bytes],
@@ -59,17 +71,6 @@ def transform_fn(
     accept_type: str = "application/json",
     num_samples: int = 1000,
 ) -> Union[bytes, Tuple[bytes, str]]:
-    # See https://sagemaker.readthedocs.io/en/stable/using_mxnet.html#use-transform-fn
-    #
-    # [As of this writing on 20200506]
-    # Looking at sagemaker_mxnet_serving_container/handler_service.py [1], it turns out I must use transform_fn()
-    # because my gluonts predictor is neither mx.module.BaseModule nor mx.gluon.block.Block.
-    #
-    # I suppose the model_fn documentation [2] can be updated also, to make it clear that if entrypoint does not use
-    # transform_fn(), then model_fn() must returns object with similar type to what the default implementation does.
-    #
-    # [1] https://github.com/aws/sagemaker-mxnet-serving-container/blob/406c1f387d9800ed264b538bdbf9a30de68b6977/src/sagemaker_mxnet_serving_container/handler_service.py
-    # [2] https://sagemaker.readthedocs.io/en/stable/using_mxnet.html#load-a-model
     deser_input: List[DataEntry] = _input_fn(request_body, content_type)
     fcast: List[Forecast] = _predict_fn(deser_input, model, num_samples=num_samples)
     ser_output: Union[bytes, Tuple[bytes, str]] = _output_fn(fcast, accept_type)
