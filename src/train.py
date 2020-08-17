@@ -5,7 +5,7 @@ import json
 import os
 import sys
 import warnings
-from argparse import Namespace
+from argparse import ArgumentParser, Namespace
 from pathlib import Path
 from pydoc import locate
 from typing import Any, Dict
@@ -25,30 +25,6 @@ warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
 
 # Setup logger must be done in the entrypoint script.
 logger = smepu.setup_opinionated_logger(__name__)
-
-
-def load_dataset(args: Namespace) -> TrainDatasets:
-    """Load data from channel or fallback to named public dataset."""
-    if args.s3_dataset is None:
-        # load built in dataset
-        logger.info("Downloading dataset %s", args.dataset)
-        dataset = datasets.get_dataset(args.dataset)
-    else:
-        # load custom dataset
-        logger.info("Loading dataset from %s", args.s3_dataset)
-        s3_dataset_dir = Path(args.s3_dataset)
-        dataset = load_datasets(
-            metadata=s3_dataset_dir / "metadata", train=s3_dataset_dir / "train", test=s3_dataset_dir / "test",
-        )
-    return dataset
-
-
-def new_estimator(algo: str, kwargs) -> Any:
-    """Initialize an instance of klass with the specified kwargs."""
-    klass: Any = locate(algo)
-    estimator = klass(**kwargs)
-    logger.info("Estimator: %s", estimator)
-    return estimator
 
 
 def train(args: Namespace, algo_args: Dict[str, Any]) -> None:
@@ -137,6 +113,30 @@ def train(args: Namespace, algo_args: Dict[str, Any]) -> None:
         wmape_metrics.to_csv(f, index=False)
 
 
+def load_dataset(args: Namespace) -> TrainDatasets:
+    """Load data from channel or fallback to named public dataset."""
+    if args.s3_dataset is None:
+        # load built in dataset
+        logger.info("Downloading dataset %s", args.dataset)
+        dataset = datasets.get_dataset(args.dataset)
+    else:
+        # load custom dataset
+        logger.info("Loading dataset from %s", args.s3_dataset)
+        s3_dataset_dir = Path(args.s3_dataset)
+        dataset = load_datasets(
+            metadata=s3_dataset_dir / "metadata", train=s3_dataset_dir / "train", test=s3_dataset_dir / "test",
+        )
+    return dataset
+
+
+def new_estimator(algo: str, kwargs) -> Any:
+    """Initialize an instance of klass with the specified kwargs."""
+    klass: Any = locate(algo)
+    estimator = klass(**kwargs)
+    logger.info("Estimator: %s", estimator)
+    return estimator
+
+
 def freq_name(s):
     """Convert frequency string to friendly name.
 
@@ -151,11 +151,8 @@ def freq_name(s):
     raise ValueError(f"Unsupported frequency: {s}")
 
 
-if __name__ == "__main__":
-    # Minimal argparser for SageMaker protocols
-    parser = smepu.argparse.sm_protocol(channels=["s3_dataset"])
-
-    # Hyperparameters captured by this entrypoint script.
+def add_args(parser: ArgumentParser):
+    """Configure hyperparameters captured by this entrypoint script."""
     parser.add_argument(
         "--algo",
         type=str,
@@ -194,11 +191,13 @@ if __name__ == "__main__":
     )
     parser.add_argument("--stop_before", type=str, help="For debug/dev/test", default="", choices=["", "train", "eval"])
 
+
+if __name__ == "__main__":
+    # Minimal argparser for SageMaker protocols
+    parser = smepu.argparse.sm_protocol(channels=["s3_dataset"])
+    add_args(parser)
+
     logger.info("CLI args to entrypoint script: %s", sys.argv)
     args, train_args = parser.parse_known_args()
 
-    # Convert cli args / hyperparameters to kwargs
-    kwargs: Dict[str, Any] = smepu.argparse.to_kwargs(train_args)
-
-    # algo_args = parse_hyperparameters(train_args)
-    train(args, kwargs)
+    train(args, smepu.argparse.to_kwargs(train_args))
