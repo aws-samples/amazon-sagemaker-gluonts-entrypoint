@@ -1,234 +1,24 @@
 import smepu
 
-import inspect
+import io
 import json
 import os
-import sys
 import warnings
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Union
+from typing import List, Tuple, Union
 
 import matplotlib.cbook
 import numpy as np
-from gluonts.dataset.common import DataEntry, ListDataset, TrainDatasets, load_datasets
-from gluonts.dataset.repository import datasets
-from gluonts.evaluation import backtest
+from gluonts.dataset.common import DataEntry, ListDataset
 from gluonts.model.forecast import Config, Forecast
 from gluonts.model.predictor import Predictor
-from pandas.tseries import offsets
-from pandas.tseries.frequencies import to_offset
 
-from gluonts_example.evaluator import MyEvaluator
-from gluonts_example.util import hp2estimator, mkdir
+from gluonts_example.util import clip_to_zero, expm1_and_clip_to_zero, log1p
 
 warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
 
 # Setup logger must be done in the entrypoint script.
 logger = smepu.setup_opinionated_logger(__name__)
-
-
-def log1p_tds(dataset: TrainDatasets) -> TrainDatasets:
-    """Create a new train datasets with targets log-transformed."""
-    # Implementation note: currently, the only way is to eagerly load all timeseries in memory, and do the transform.
-    train = ListDataset(dataset.train, freq=dataset.metadata.freq)
-    log1p(train)
-
-    if dataset.test is not None:
-        test = ListDataset(dataset.test, freq=dataset.metadata.freq)
-        log1p(test)
-    else:
-        test = None
-
-    # fmt: off
-    return TrainDatasets(
-        dataset.metadata.copy(),  # Note: pydantic's deep copy.
-        train=train,
-        test=test
-    )
-    # fmt: on
-
-
-def log1p(ds: ListDataset):
-    """In-place log transformation."""
-    for data_entry in ds:
-        data_entry["target"] = np.log1p(data_entry["target"])
-
-
-def expm1_and_clip_to_zero(_, yhat: np.ndarray):
-    """Expm1, followed by clip at 0.0."""
-    logger.debug("Before expm1: %s %s", yhat.shape, yhat)
-    logger.debug("After expm1: %s %s", yhat.shape, np.expm1(yhat))
-
-    return np.clip(np.expm1(yhat), a_min=0.0, a_max=None)
-
-
-def clip_to_zero(_, yhat: np.ndarray):
-    return np.clip(yhat, a_min=0.0, a_max=None)
-
-
-def train(args, algo_args):
-    """Train a specified estimator on a specified dataset."""
-    # Load data
-    if args.s3_dataset is None:
-        # load built in dataset
-        logger.info("Downloading dataset %s", args.dataset)
-        dataset = datasets.get_dataset(args.dataset)
-    else:
-        # load custom dataset
-        logger.info("Loading dataset from %s", args.s3_dataset)
-        s3_dataset_dir = Path(args.s3_dataset)
-        dataset = load_datasets(
-            metadata=s3_dataset_dir / "metadata", train=s3_dataset_dir / "train", test=s3_dataset_dir / "test",
-        )
-        # Apply transformation if requested
-        if args.y_transform == "log1p":
-            dataset = log1p_tds(dataset)
-
-    # Initialize estimator
-    estimator = hp2estimator(args.algo, algo_args, dataset.metadata)
-    logger.info("Estimator: %s", estimator)
-
-    # Debug/dev/test milestone
-    if args.stop_before == "train":
-        logger.info("Early termination: before %s", args.stop_before)
-        return
-
-    # Probe the right kwarg for validation data.
-    # - NPTSEstimator (or any based on DummyEstimator) uses validation_dataset=...
-    # - Other estimators use validation_data=...
-    candidate_kwarg = [k for k in inspect.signature(estimator.train).parameters if "validation_data" in k]
-    kwargs = {"training_data": dataset.train}
-    if len(candidate_kwarg) == 1:
-        kwargs[candidate_kwarg[0]] = dataset.test
-    else:
-        kwargs["validation_data"] = dataset.test
-
-    # Train
-    logger.info("Starting model training.")
-    # predictor = estimator.train(training_data=dataset.train, validation_data=dataset.test)
-    predictor = estimator.train(**kwargs)
-    # Save
-    model_dir = mkdir(args.model_dir)
-    predictor.serialize(model_dir)
-    # Also record the y's transformation & inverse transformation.
-    with open(os.path.join(args.model_dir, "y_transform.json"), "w") as f:
-        if args.y_transform == "log1p":
-            f.write('{"transform": "log1p", "inverse_transform": "expm1"}\n')
-            predictor.output_transform = expm1_and_clip_to_zero
-        else:
-            f.write('{"transform": "noop", "inverse_transform": "clip_at_zero"}\n')
-            predictor.output_transform = clip_to_zero
-
-    # Debug/dev/test milestone
-    if args.stop_before == "eval":
-        logger.info("Early termination: before %s", args.stop_before)
-        return
-
-    # Backtesting
-    logger.info("Starting model evaluation.")
-    forecast_it, ts_it = backtest.make_evaluation_predictions(
-        dataset=dataset.test, predictor=predictor, num_samples=args.num_samples,
-    )
-
-    # Compute standard metrics over all samples or quantiles, and plot each timeseries, all in one go!
-    # Remember to specify gt_inverse_transform when computing metrics.
-    logger.info("MyEvaluator: assume non-negative ground truths, hence no clip_to_zero performed on them.")
-    gt_inverse_transform = np.expm1 if args.y_transform == "log1p" else None
-    evaluator = MyEvaluator(
-        out_dir=Path(args.output_data_dir),
-        quantiles=args.quantiles,
-        plot_transparent=bool(args.plot_transparent),
-        gt_inverse_transform=gt_inverse_transform,
-        clip_at_zero=True,
-    )
-    agg_metrics, item_metrics = evaluator(ts_it, forecast_it, num_series=len(dataset.test))
-
-    # required for metric tracking.
-    for name, value in agg_metrics.items():
-        logger.info(f"gluonts[metric-{name}]: {value}")
-
-    # save the evaluation results
-    metrics_output_dir = Path(args.output_data_dir)
-    with open(metrics_output_dir / "agg_metrics.json", "w") as f:
-        json.dump(agg_metrics, f)
-    with open(metrics_output_dir / "item_metrics.csv", "w") as f:
-        item_metrics.to_csv(f, index=False)
-
-    # Specific requirement: output wmape to a separate file.
-
-    with open(metrics_output_dir / f"{freq_name(dataset.metadata.freq)}-wmapes.csv", "w") as f:
-        warnings.warn(
-            "wmape csv uses daily or weekly according to frequency string, "
-            "hence 7D still results in daily rather than weekly."
-        )
-        wmape_metrics = item_metrics[["item_id", "wMAPE"]].rename(
-            {"item_id": "category", "wMAPE": "test_wMAPE"}, axis=1
-        )
-        wmape_metrics.to_csv(f, index=False)
-
-
-def freq_name(s):
-    """Convert frequency string to friendly name.
-
-    This implementation uses only frequency string, hence 7D still becomes daily. It's not smart enough yet to know
-    that 7D equals to week.
-    """
-    offset = to_offset(s)
-    if isinstance(offset, offsets.Day):
-        return "daily"
-    elif isinstance(offset, offsets.Week):
-        return "weekly"
-    raise ValueError(f"Unsupported frequency: {s}")
-
-
-def parse_hyperparameters(hm) -> Dict[str, Any]:
-    """Convert list of ['--name', 'value', ...] to { 'name': value}, where 'value' is converted to the nearest data type.
-
-    Conversion follows the principle: "if it looks like a duck and quacks like a duck, then it must be a duck".
-    """
-    d = {}
-    it = iter(hm)
-    try:
-        while True:
-            key = next(it)[2:]
-            value = next(it)
-            d[key] = value
-    except StopIteration:
-        pass
-
-    # Infer data types.
-    dd = {k: infer_dtype(v) for k, v in d.items()}
-    return dd
-
-
-def infer_dtype(s):
-    """Auto-cast string values to nearest matching datatype.
-
-    Conversion follows the principle: "if it looks like a duck and quacks like a duck, then it must be a duck".
-    Note that python 3.6 implements PEP-515 which allows '_' as thousand separators. Hence, on Python 3.6,
-    '1_000' is a valid number and will be converted accordingly.
-    """
-    if s == "None":
-        return None
-    if s == "True":
-        return True
-    if s == "False":
-        return False
-
-    try:
-        i = float(s)
-        if ("." in s) or ("e" in s.lower()):
-            return i
-        else:
-            return int(s)
-    except:  # noqa:E722
-        pass
-
-    try:
-        # If string is json, deser it.
-        return json.loads(s)
-    except:  # noqa:E722
-        return s
 
 
 def model_fn(model_dir: Union[str, Path]) -> Predictor:
@@ -373,33 +163,3 @@ def _output_fn(
     str_results = "\n".join((json.dumps(jsonify_floats(forecast.as_json_dict(config))) for forecast in forecasts))
     bytes_results = str.encode(str_results)
     return bytes_results, content_type
-
-
-if __name__ == "__main__":
-    # Minimal argparser for SageMaker protocols
-    parser = smepu.argparse.sm_protocol(channels=["s3_dataset", "dataset"])
-
-    # SageMaker protocols: input data, output dir and model directories
-    # parser.add_argument("--s3_dataset", type=str, default=os.environ.get("SM_CHANNEL_S3_DATASET", None))
-    # parser.add_argument("--dataset", type=str, default=os.environ.get("SM_HP_DATASET", ""))
-
-    # Arguments for evaluators
-    parser.add_argument("--num_samples", type=int, default=os.environ.get("SM_HP_NUM_SAMPLES", 1000))
-    parser.add_argument(
-        "--quantiles", default=os.environ.get("SM_HP_QUANTILES", [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
-    )
-    parser.add_argument(
-        "--algo", type=str, default=os.environ.get("SM_HP_ALGO", "gluonts.model.deepar.DeepAREstimator")
-    )
-    parser.add_argument("--y_transform", type=str, default="noop", choices=["noop", "log1p"])
-
-    # Argumets for plots
-    parser.add_argument("--plot_transparent", type=int, default=os.environ.get("SM_HP_PLOT_TRANSPARENT", 0))
-
-    # Debug/dev/test features; source code is the documentation hence, only for developers :).
-    parser.add_argument("--stop_before", type=str, default="")
-
-    logger.info("CLI args to entrypoint script: %s", sys.argv)
-    args, train_args = parser.parse_known_args()
-    algo_args = parse_hyperparameters(train_args)
-    train(args, algo_args)

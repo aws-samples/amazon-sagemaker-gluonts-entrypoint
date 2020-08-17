@@ -3,16 +3,24 @@ import json
 from typing import List
 
 import pytest
-from gluonts.dataset.common import DataEntry
-from gluonts.model.forecast import Config
 from gluonts.model.predictor import Predictor
 
-import entrypoint
+
+@pytest.fixture(autouse=True)
+def gluonts_inference(root_dir, monkeypatch, helpers):
+    """Import inference script as a module.
+
+    See https://github.com/verdimrc/python-project-skeleton/tree/master/test for
+    the reason behind importing this way (as opposed import statement.
+    """
+    monkeypatch.syspath_prepend(root_dir / "src")
+    inference = helpers.import_from_file("gluonts_inference", root_dir / "src" / "inference.py")
+    return inference
 
 
 @pytest.fixture
-def predictor():
-    predictor = entrypoint.model_fn("test/refdata/model")
+def predictor(gluonts_inference):
+    predictor = gluonts_inference.model_fn("test/refdata/model")
     assert isinstance(predictor, Predictor)
     return predictor
 
@@ -25,8 +33,10 @@ def request_body():
 
 
 @pytest.mark.parametrize("num_samples,quantiles", [(5, ["0.4", "0.6"]), (25, ["0.2", "0.5", "0.8"])])
-def test_transform_fn(predictor: Predictor, request_body: bytes, num_samples: int, quantiles: List[str]):
-    results_bytes, accept_type = entrypoint.transform_fn(
+def test_transform_fn(
+    gluonts_inference, predictor: Predictor, request_body: bytes, num_samples: int, quantiles: List[str]
+):
+    results_bytes, accept_type = gluonts_inference.transform_fn(
         predictor, request_body, "application/json", "application/json", 3
     )
 
@@ -45,9 +55,11 @@ def test_transform_fn(predictor: Predictor, request_body: bytes, num_samples: in
 
 
 @pytest.mark.parametrize("num_samples,quantiles", [(5, ["0.4", "0.6"]), (25, ["0.2", "0.5", "0.8"])])
-def test_predict_fn(predictor: Predictor, request_body: bytes, num_samples: int, quantiles: List[str]):
-    input_ts = entrypoint._input_fn(request_body, "application/json")
-    results = entrypoint._predict_fn(input_ts, predictor, num_samples=num_samples)
+def test_predict_fn(
+    gluonts_inference, predictor: Predictor, request_body: bytes, num_samples: int, quantiles: List[str]
+):
+    input_ts = gluonts_inference._input_fn(request_body, "application/json")
+    results = gluonts_inference._predict_fn(input_ts, predictor, num_samples=num_samples)
 
     # Verify forecast paths.
     for result in results:
