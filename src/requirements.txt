@@ -1,3 +1,5 @@
 gluonts>=0.5.0
 mxnet>=1.6.0
 pandas
+git+https://github.com/verdimrc/smepu@master#egg=smepu
+git+https://github.com/verdimrc/smallmatter@master#egg=smallmatter

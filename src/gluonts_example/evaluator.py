@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 from gluonts.evaluation import Evaluator
 from gluonts.model.forecast import Config, Forecast
-
 from metrics import wmape
 from sm_util import mkdir
 
