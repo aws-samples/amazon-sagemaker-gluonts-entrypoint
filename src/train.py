@@ -5,20 +5,21 @@ import json
 import os
 import sys
 import warnings
+from argparse import Namespace
 from pathlib import Path
 from pydoc import locate
 from typing import Any, Dict
 
 import matplotlib.cbook
 import numpy as np
-from gluonts.dataset.common import load_datasets
+from gluonts.dataset.common import TrainDatasets, load_datasets
 from gluonts.dataset.repository import datasets
 from gluonts.evaluation import backtest
 from pandas.tseries import offsets
 from pandas.tseries.frequencies import to_offset
 
 from gluonts_example.evaluator import MyEvaluator
-from gluonts_example.util import clip_to_zero, expm1_and_clip_to_zero, log1p_tds, mkdir
+from gluonts_example.util import clip_to_zero, expm1_and_clip_to_zero, log1p_tds, mkdir, override_hp
 
 warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
 
@@ -26,9 +27,8 @@ warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
 logger = smepu.setup_opinionated_logger(__name__)
 
 
-def train(args, algo_args):
-    """Train a specified estimator on a specified dataset."""
-    # Load data
+def load_dataset(args: Namespace) -> TrainDatasets:
+    """Load data from channel or fallback to named public dataset."""
     if args.s3_dataset is None:
         # load built in dataset
         logger.info("Downloading dataset %s", args.dataset)
@@ -40,16 +40,22 @@ def train(args, algo_args):
         dataset = load_datasets(
             metadata=s3_dataset_dir / "metadata", train=s3_dataset_dir / "train", test=s3_dataset_dir / "test",
         )
-        # Apply transformation if requested
-        if args.y_transform == "log1p":
-            dataset = log1p_tds(dataset)
+    return dataset
 
-    # Estimator is an instance of "algo" class.
-    klass: Any = locate(args.algo)
-    estimator = klass(**algo_args)
+
+def new_estimator(algo: str, kwargs) -> Any:
+    """Initialize an instance of klass with the specified kwargs."""
+    klass: Any = locate(algo)
+    estimator = klass(**kwargs)
     logger.info("Estimator: %s", estimator)
-    # Initialize estimator
-    # estimator = hp2estimator(args.algo, algo_args, dataset.metadata)
+    return estimator
+
+
+def train(args: Namespace, algo_args: Dict[str, Any]) -> None:
+    """Train a specified estimator on a specified dataset."""
+    dataset = load_dataset(args)
+    algo_args = override_hp(algo_args, dataset.metadata)
+    estimator = new_estimator(args.algo, kwargs=algo_args)
 
     # Debug/dev/test milestone
     if args.stop_before == "train":
@@ -68,6 +74,8 @@ def train(args, algo_args):
 
     # Train
     logger.info("Starting model training.")
+    if args.y_transform == "log1p":
+        dataset = log1p_tds(dataset)
     # predictor = estimator.train(training_data=dataset.train, validation_data=dataset.test)
     predictor = estimator.train(**kwargs)
     # Save

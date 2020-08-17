@@ -1,6 +1,5 @@
 import logging
 import os
-import warnings
 from pathlib import Path
 from typing import Any, Dict, Union
 
@@ -14,15 +13,7 @@ def mkdir(path: Union[str, os.PathLike]):
     return path
 
 
-def hp2estimator(algo: str, algo_args: Dict[str, Any], metadata: MetaData) -> Any:
-    algo_args = merge_metadata_hp(algo_args, metadata)
-    # estimator_config = klass_dict(algo, [], deser_algo_args(algo_args, deser_args[algo]))
-    # estimator = serde.decode(estimator_config)
-    # return estimator
-    raise NotImplementedError
-
-
-def merge_metadata_hp(hp: Dict[str, Any], metadata: MetaData) -> Dict[str, Any]:
+def override_hp(hp: Dict[str, Any], metadata: MetaData) -> Dict[str, Any]:
     """Resolve values to inject to the estimator: is it the hp or the one from metadata.
 
     This function:
@@ -35,25 +26,22 @@ def merge_metadata_hp(hp: Dict[str, Any], metadata: MetaData) -> Dict[str, Any]:
     # Always use freq from dataset.
     if "freq" in hp and hp["freq"] != metadata.freq:
         freq_hp = hp["freq"]
-        logging.info(f"freq: set freq='{metadata.freq}' from metadata; ignore '{freq_hp}' from hyperparam.")
+        logging.warning(f"freq: set freq='{metadata.freq}' from metadata; ignore '{freq_hp}' from hyperparam.")
     hp["freq"] = metadata.freq
 
-    # Use prediction_length hyperparameters, but if not specified then fallbacks/defaults to the one from metadata.
+    # Use prediction_length hyperparameters, but if not specified then fallbacks to the one from metadata.
     if "prediction_length" not in hp:
         hp["prediction_length"] = metadata.prediction_length
-        logging.info(
+        logging.warning(
             "prediction_length: no hyperparam, so set " f"prediction_length={metadata.prediction_length} from metadata"
         )
-
-    # TODO: autoprobe cardinalities.
-    warnings.warn("This implementation still ignores cardinality and static features in the metadata", RuntimeWarning)
 
     return hp
 
 
-################################################################
+################################################################################
 # Data transformations
-################################
+################################################################################
 
 
 def log1p_tds(dataset: TrainDatasets) -> TrainDatasets:
