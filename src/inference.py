@@ -1,8 +1,7 @@
-import argparse
+import smepu
+
 import inspect
-import io
 import json
-import logging
 import os
 import sys
 import warnings
@@ -11,100 +10,21 @@ from typing import Any, Dict, List, Tuple, Union
 
 import matplotlib.cbook
 import numpy as np
-from gluonts.dataset.common import DataEntry, ListDataset, TrainDatasets
+from gluonts.dataset.common import DataEntry, ListDataset, TrainDatasets, load_datasets
+from gluonts.dataset.repository import datasets
+from gluonts.evaluation import backtest
 from gluonts.model.forecast import Config, Forecast
 from gluonts.model.predictor import Predictor
 from pandas.tseries import offsets
 from pandas.tseries.frequencies import to_offset
 
+from gluonts_example.evaluator import MyEvaluator
+from gluonts_example.util import hp2estimator, mkdir
+
 warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
 
-# try block to prevent isort shifting the import statements.
-# See also: https://github.com/timothycrosley/isort/issues/295#issuecomment-570898035
-try:
-    # region: quiet tqdm
-
-    # This stanza must appear before any module that uses tqdm.
-    # https://github.com/tqdm/tqdm/issues/619#issuecomment-425234504
-
-    # By default, disable tqdm if we believe we're running under SageMaker. This has to be done before importing any
-    # other module that uses tqdm.
-    if "SM_HOSTS" in os.environ:
-        print("Env. var SM_HOSTS detected. Silencing tqdm as we're likely to run on SageMaker...")
-        import tqdm
-        from tqdm import auto as tqdm_auto
-
-        old_auto_tqdm = tqdm_auto.tqdm
-
-        def nop_tqdm_off(*a, **k):
-            k["disable"] = True
-            return old_auto_tqdm(*a, **k)
-
-        tqdm_auto.tqdm = (
-            nop_tqdm_off  # For download, completely disable progress bars: large models, lots of stuffs printed.
-        )
-
-        # Used by run_ner.py
-        old_tqdm = tqdm.tqdm
-
-        def nop_tqdm(*a, **k):
-            k["ncols"] = 0
-            k["mininterval"] = 3600
-            return old_tqdm(*a, **k)
-
-        tqdm.tqdm = nop_tqdm
-
-        # Used by run_ner.py
-        old_trange = tqdm.trange
-
-        def nop_trange(*a, **k):
-            k["ncols"] = 0
-            k["mininterval"] = 3600
-            return old_trange(*a, **k)
-
-        tqdm.trange = nop_trange
-    # endregion: quiet tqdm
-
-    from gluonts.dataset.common import load_datasets
-    from gluonts.dataset.repository import datasets
-    from gluonts.evaluation import backtest
-
-    from sm_util import hp2estimator, mkdir
-    from evaluator import MyEvaluator
-except:  # noqa: E722
-    raise
-
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s %(message)s", datefmt="[%Y-%m-%d %H:%M:%S]",
-)
-logger = logging.getLogger(__name__)
-
-# Training & batch transform has different logging handler.
-if logging.root.handlers == []:
-    # Training: no logging handler, so we need to setup one to stdout.
-    # Reason to use stdout: xgboost script mode swallows stderr.
-    print("Add logging handle to stdout")
-    ch = logging.StreamHandler(sys.stdout)
-    print("1000: created stream handler")
-    ch.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
-    print("2000: formatted stream handler")
-    logger.addHandler(ch)
-    print("3000: added stream handler to logger")
-
-
-def print_logging_setup(logger):
-    """Walkthrough logger hierarchy and print details of each logger.
-
-    Print to stdout to make sure CloudWatch pick it up, regardless of how logger handler is setup.
-    """
-    lgr = logging.getLogger(__name__)
-    while lgr is not None:
-        print("level: {}, name: {}, handlers: {}".format(lgr.level, lgr.name, lgr.handlers))
-        lgr = lgr.parent
-
-
-print_logging_setup(logger)
-# logger.setLevel(logging.DEBUG)
+# Setup logger must be done in the entrypoint script.
+logger = smepu.setup_opinionated_logger(__name__)
 
 
 def log1p_tds(dataset: TrainDatasets) -> TrainDatasets:
@@ -456,16 +376,12 @@ def _output_fn(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-
-    # an alternative way to load hyperparameters via SM_HPS environment variable.
-    parser.add_argument("--sm-hps", type=json.loads, default=os.environ.get("SM_HPS", {}))
+    # Minimal argparser for SageMaker protocols
+    parser = smepu.argparse.sm_protocol(channels=["s3_dataset", "dataset"])
 
     # SageMaker protocols: input data, output dir and model directories
-    parser.add_argument("--model-dir", type=str, default=os.environ.get("SM_MODEL_DIR", "model"))
-    parser.add_argument("--output-data-dir", type=str, default=os.environ.get("SM_OUTPUT_DATA_DIR", "output"))
-    parser.add_argument("--s3_dataset", type=str, default=os.environ.get("SM_CHANNEL_S3_DATASET", None))
-    parser.add_argument("--dataset", type=str, default=os.environ.get("SM_HP_DATASET", ""))
+    # parser.add_argument("--s3_dataset", type=str, default=os.environ.get("SM_CHANNEL_S3_DATASET", None))
+    # parser.add_argument("--dataset", type=str, default=os.environ.get("SM_HP_DATASET", ""))
 
     # Arguments for evaluators
     parser.add_argument("--num_samples", type=int, default=os.environ.get("SM_HP_NUM_SAMPLES", 1000))
