@@ -1,5 +1,6 @@
-import pandas as pd
 from typing import Any, Dict, Optional
+
+import pandas as pd
 
 
 def fill_dt_all(df, ts_id=["category", "cost_center"], **kwargs) -> pd.DataFrame:
