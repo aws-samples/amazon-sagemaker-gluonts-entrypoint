@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SRC=src
+SRC=src/entrypoint
 INPUT=refdata
 
 python $SRC/train.py --stop_before train \
