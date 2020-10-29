@@ -19,14 +19,13 @@ def mape(y_true, y_pred, version=0) -> float:
     if version == 0:
         return np.mean(np.abs((y_true - y_pred) / y_true))
     elif version == 1:
-        # This version takes care of div-by-0, and ignore 0-y from calculation.
+        # This version takes care of div-by-0, and ignore 0-y in nominator.
         # See: https://github.com/awslabs/gluon-ts/pull/725
         denominator = np.abs(y_true)
         flag = denominator == 0
         return np.mean((np.abs(y_true - y_pred) * (1 - flag)) / (denominator + flag))
     elif version == 2:
-        # This version takes care of div-by-0, and include 0-y from calculation.
-        # Based on: https://github.com/awslabs/gluon-ts/pull/725
+        # This version takes care of div-by-0, and include 0-y in nominator.
         denominator = np.abs(y_true)
         flag = denominator == 0
         return np.mean(np.abs(y_true - y_pred) / (denominator + flag))
