@@ -1,5 +1,5 @@
 gluonts~=0.5
 mxnet>=1.6.0
-pandas>=1.0,1.1
+pandas>=1.0,<1.1
 git+https://github.com/aws-samples/amazon-sagemaker-entrypoint-utilities@v0.1.0#egg=smepu
 git+https://github.com/aws-samples/smallmatter-package@main#egg=smallmatter
