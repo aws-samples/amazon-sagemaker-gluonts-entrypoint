@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-SRC=src
+SRC=src/entrypoint
 INPUT=refdata
 
 echo -e '\nDeepAR...'

@@ -4,6 +4,7 @@
 test/data/
 model/
 output/
+data/
 
 # Jupyter notebook's checkpoints
 .ipynb_checkpoints

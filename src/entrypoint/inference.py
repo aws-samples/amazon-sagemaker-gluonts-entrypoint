@@ -1,5 +1,6 @@
 import smepu
 
+import argparse
 import io
 import json
 import os
@@ -12,7 +13,6 @@ import numpy as np
 from gluonts.dataset.common import DataEntry, ListDataset
 from gluonts.model.forecast import Config, Forecast
 from gluonts.model.predictor import Predictor
-
 from gluonts_example.util import clip_to_zero, expm1_and_clip_to_zero, log1p
 
 warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
@@ -164,3 +164,29 @@ def _output_fn(
     str_results = "\n".join((json.dumps(jsonify_floats(forecast.as_json_dict(config))) for forecast in forecasts))
     bytes_results = str.encode(str_results)
     return bytes_results, content_type
+
+
+if __name__ == "__main__":
+    from smallmatter.pathlib import Path2
+
+    print("Testing this script using local Python environment (i.e., does not even start a local container)...")
+
+    # CLI arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input_file", type=Path2, default="bt_input/data.json")
+    parser.add_argument("--model_dir", type=str, default=os.environ.get("SM_MODEL_DIR", "model"))
+    parser.add_argument("-v", "--verbose", action="store_true")
+    args = parser.parse_args()
+    print(vars(args))
+
+    # request_body = b"""{"start": "2020-01-06 00:00:00", "target": [80, 90, 34, 78, 90, 12, 34, 56], "item_id": "A|1"}
+    # {"start": "2020-01-13 00:00:00", "target": [256, 123, 125, 150, 127, 20, 205], "item_id": "B|2"}
+    # """
+
+    model: Predictor = model_fn(args.model_dir)
+
+    with args.input_file.open("r") as f:
+        for request_body in f:
+            results_bytes = transform_fn(model, request_body, "application/json", "application/json")
+            if args.verbose:
+                print(results_bytes)
