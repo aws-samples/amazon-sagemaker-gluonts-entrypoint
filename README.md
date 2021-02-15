@@ -1,13 +1,17 @@
 ## Example Entrypoint Scripts to run GluonTS on Amazon SageMaker
 
 This repository contains the example that supplement the
-[blog post](https://aws.amazon.com/blogs/PLACEHOLDER/) on using
-[GluonTS](https://ts.gluon.ai/) to develop custom forecasting models on
-[Amazon SageMaker](https://aws.amazon.com/sagemaker/), and to generate
-forecasts with those custom models.
+[blog post](https://aws.amazon.com/blogs/industries/novartis-ag-uses-amazon-sagemaker-and-gluonts-for-demand-forecasting/)
+on using [GluonTS](https://ts.gluon.ai/) to develop custom forecasting models on
+[Amazon SageMaker](https://aws.amazon.com/sagemaker/), and to generate forecasts
+with those custom models.
 
 The sample notebooks demonstrate how to experiment with multiple models quicker
 with only parameteric changes to the entrypoint train script.
+
+![Structure of this repo](references/repo-layout.png)
+
+## Implementation notes
 
 The entrypoint train script utilizes GluonTS to work with time series data in
 a simpler fashion, and to access many state-of-the-art custom models in the
