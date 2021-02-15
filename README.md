@@ -9,6 +9,10 @@ forecasts with those custom models.
 The sample notebooks demonstrate how to experiment with multiple models quicker
 with only parameteric changes to the entrypoint train script.
 
+![Structure of this repo](references/repo-layout.png)
+
+## Implementation notes
+
 The entrypoint train script utilizes GluonTS to work with time series data in
 a simpler fashion, and to access many state-of-the-art custom models in the
 GluonTS library. The novelties demonstrated by the script include:
