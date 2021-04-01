@@ -2,12 +2,10 @@
 
 This repository contains the example that supplement the
 [blog post](https://aws.amazon.com/blogs/industries/novartis-ag-uses-amazon-sagemaker-and-gluonts-for-demand-forecasting/)
-on using [GluonTS](https://ts.gluon.ai/) to develop custom forecasting models on
-[Amazon SageMaker](https://aws.amazon.com/sagemaker/), and to generate forecasts
-with those custom models.
+on using [GluonTS](https://ts.gluon.ai/) to develop custom product demand forecasting on
+[Amazon SageMaker](https://aws.amazon.com/sagemaker/), and generate demand forecasts for each products with custom models.
 
-The sample notebooks demonstrate how to experiment with multiple models quicker
-with only parameteric changes to the entrypoint train script.
+The sample notebooks demonstrate faster experimentation with multiple custom models. The changes involves only parameteric changes to the entrypoint train script.
 
 ![Structure of this repo](references/repo-layout.png)
 
@@ -20,9 +18,9 @@ GluonTS library. The novelties demonstrated by the script include:
 - a single generic train script that supports multiple built-in algorithms in
   GluonTS.
 
-- demonstrate how to write notebooks and entrypoint scripts in modular style.
+- Guide modular style implementation in notebooks and entrypoint scripts.
 
-- the train script passes through hyperparameters it receives as command line
+- The train script passes through hyperparameters, it receives as command line
   arguments, directly to the specified GluonTS estimator.
 
   * The entrypoint train script does not need to explicitly declare all those
@@ -33,7 +31,7 @@ GluonTS library. The novelties demonstrated by the script include:
     a dependency that the entrypoint train script declares in its
     `requirements.txt`
 
-- at the end of training, the train script performs backtesting on a test
+- At the end of training, the train script performs backtesting on a test
   split. Then, the script outputs to files the backtest performance metrics,
   the forecasts resulted from test split, and backtest plots of all timeseries
   as montages and individual plots.
@@ -54,3 +52,8 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 ## License
 
 This library is licensed under the MIT-0 License. See the LICENSE file.
+
+## Authors
+* Verdi March [GitHub](https://github.com/verdimrc)
+* Beibit Baktygaliyev
+* Zmnako Awrahman [GitHub](https://github.com/zmnaka)
