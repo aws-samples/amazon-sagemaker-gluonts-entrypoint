@@ -62,7 +62,7 @@ python $SRC/train.py --stop_before eval \
     --trainer.__class__ gluonts.mx.trainer.Trainer \
     --trainer.epochs 3 \
     --cardinality 2 \
-    --kernel_output.__class__ gluonts.kernels.PeriodicKernelOutput \
+    --kernel_output.__class__ gluonts.mx.kernels.PeriodicKernelOutput \
     --prediction_length 5 \
     | egrep --color=always -i 'prediction_length|freq|\.[a-zA-Z]+kerneloutput|epochs|\.[a-zA-Z]+Estimator|$'
 
