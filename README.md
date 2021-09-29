@@ -5,6 +5,11 @@ This repository contains the example that supplement the
 on using [GluonTS](https://ts.gluon.ai/) to develop custom product demand forecasting on
 [Amazon SageMaker](https://aws.amazon.com/sagemaker/), and generate demand forecasts for each products with custom models.
 
+> **UPDATES:**
+>
+> - the `main` branch has been updated to gluonts-0.8 and mxnet-1.7.
+> - the `blog-version` branch contains the code referred by the blog post. This branch uses gluonts-0.5 and mxnet-1.6
+
 The sample notebooks demonstrate faster experimentation with multiple custom models. The changes involves only parameteric changes to the entrypoint train script.
 
 ![Structure of this repo](references/repo-layout.png)
@@ -20,7 +25,7 @@ GluonTS library. The novelties demonstrated by the script include:
 
 - Guide modular style implementation in notebooks and entrypoint scripts.
 
-- The train script passes through hyperparameters, it receives as command line
+- The train script passes through hyperparameters which it receives as command line
   arguments, directly to the specified GluonTS estimator.
 
   * The entrypoint train script does not need to explicitly declare all those
