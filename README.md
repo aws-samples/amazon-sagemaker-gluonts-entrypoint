@@ -25,7 +25,7 @@ GluonTS library. The novelties demonstrated by the script include:
 
 - Guide modular style implementation in notebooks and entrypoint scripts.
 
-- The train script passes through hyperparameters, it receives as command line
+- The train script passes through hyperparameters which it receives as command line
   arguments, directly to the specified GluonTS estimator.
 
   * The entrypoint train script does not need to explicitly declare all those
